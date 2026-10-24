@@ -1,0 +1,10 @@
+{
+	"autodeskProduct": "Fusion",
+	"type": "script",
+	"author": "AlfieBot project",
+	"description": {
+		"": "Generates the parametric AlfieBot V0.1 desktop robot assembly (native components, sketches and features) and writes a validation report."
+	},
+	"supportedOS": "windows|mac",
+	"editEnabled": true
+}
