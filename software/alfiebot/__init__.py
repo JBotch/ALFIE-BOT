@@ -5,4 +5,4 @@ robot. Hardware-specific code lives behind the interfaces in
 ``alfiebot.hardware`` and ``alfiebot.speech``.
 """
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

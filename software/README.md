@@ -4,12 +4,37 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.1, Stage 1 of 5: simulator window and animated face.**
+**Version 0.2, Stage 2 of 5: typed conversation and state transitions.**
 
-> Tested on Linux with Python 3.13 and pygame 2.6.1 (57 automated tests, plus
-> headless launches of both apps). **It has not been run on Windows or on
-> Raspberry Pi hardware yet.** The Pi-specific code (GPIO button) is written
-> but untested.
+> Tested on Linux with Python 3.13 and pygame 2.6.1 (121 automated tests,
+> plus headless launches of both apps). Stage 1 also ran on Windows 11 with
+> Python 3.13. **It has not been run on Raspberry Pi hardware yet.** The
+> Pi-specific code (GPIO button) is written but untested.
+
+## What Stage 2 adds
+
+- Typed conversation. Type in the panel (or click a quick phrase) as if you
+  were speaking. AlfieBot only listens after **"Hey AlfieBot"** or the robot
+  button (Space). "Hey AlfieBot, tell me a joke" works in one go.
+- The full flow: wake (eyes open, greeting) -> LISTENING -> THINKING ->
+  SPEAKING -> LISTENING. After 10 s with no answer AlfieBot goes back to
+  IDLE, and after 5 minutes idle it falls asleep. Text typed while it's
+  talking is answered straight after.
+- Deterministic intents: how are you, what can you do, jokes, name, who made
+  you, age, thanks, hello, goodbye (goes to sleep), never mind, say that
+  again, "I'm good" / "I'm sad" (offers a joke and suggests telling a
+  grown-up), and "help me with my spellings" (asks add / practise / test;
+  the tutor itself arrives in Stage 3). Anything else gets a clear "I don't
+  know how to do that yet" with a confused face.
+- Several replies per intent, never the same one twice in a row. They're in
+  `alfiebot/conversation/responses.json`, so you can edit what AlfieBot says.
+- The face follows the conversation: excited greeting, thinking pause,
+  happy or confused while talking (with a moving mouth), attentive while
+  listening.
+- The robot button wakes AlfieBot, cuts it off mid-sentence to listen, or
+  keeps it listening longer.
+- There's no voice yet (Stage 4). AlfieBot's lines appear in the transcript
+  and it "talks" for as long as the sentence would take to say.
 
 ## What Stage 1 does
 
@@ -28,8 +53,7 @@ Raspberry Pi 5.
   push-to-talk button, transcript, debug log, spelling area (Stage 3) and a
   parent area with **Delete local data**.
 
-Not in Stage 1, on purpose: conversation replies (Stage 2), spelling tutor
-(Stage 3), speech output and microphone (Stage 4), wake word and Pi hardware
+Not built yet, on purpose: spelling tutor (Stage 3), speech output and microphone (Stage 4), wake word and Pi hardware
 (Stage 5). The microphone status says "Off" and the wake word says "not
 configured" because none exists yet. Nothing pretends otherwise.
 
@@ -49,6 +73,10 @@ configured" because none exists yet. Nothing pretends otherwise.
 
 3. For just the face: `python run_face.py` (windowed) or
    `python run_face.py --fullscreen --demo` (full screen, cycling expressions).
+
+If you used the new **Python install manager** from python.org, it installs
+the newest Python (3.15 or later), which pygame doesn't support yet. Run
+`py install 3.13` and create the venv with `py -3.13 -m venv .venv`.
 
 To run the tests: `pip install -r requirements-dev.txt` then `python -m pytest`.
 
@@ -97,13 +125,28 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Start / Stop | Wake the robot (IDLE) / put it to sleep. Typed input is ignored while stopped |
 | Panel | Set state | Any of the ten states; the face follows |
 | Panel or keys 1-7 | Preview expression | Show one expression; 0 or "Follow state" goes back to the state's face |
-| Panel or Space | Hold to talk | The robot's button. A press wakes a stopped robot; push-to-talk arrives in Stage 4 |
-| Panel or T | Simulated speech | Type what you would say. Stage 1 only logs it to the transcript |
+| Panel or Space | Robot button | Wakes AlfieBot, interrupts it to listen, or keeps it listening. Real push-to-talk arrives in Stage 4 |
+| Panel, T or Enter | Simulated speech | Type what you would say, or click a quick phrase |
 | Panel or F11 | Face full screen | Face only; F11 or Esc returns |
 | Panel | Delete local data | Click twice to delete the `data/` folder |
 | Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
 
-## What to test before Stage 2
+## What to test before Stage 3
+
+1. Press Start, then type "Hey AlfieBot". The eyes open, AlfieBot greets you
+   (excited face, moving mouth), then listens. The state line counts down.
+2. Have the example chat: "I'm good", "How are you?", "What can you do?".
+   Replies should vary when you repeat things.
+3. Try jokes, "say that again", "I'm sad", "help me with my spellings", and
+   something it doesn't know (it should look confused and say what it can do).
+4. Type "How are you?" while it's IDLE: it should ignore you and remind you
+   to say "Hey AlfieBot" first.
+5. Wait 10 s while it's listening (back to idle), and say "goodbye" (asleep).
+6. Press Space while it's talking: it stops and listens.
+7. Read through `responses.json` and change anything that doesn't sound like
+   AlfieBot to you and Alfie.
+
+## Stage 1 checks
 
 1. The simulator opens and the face starts asleep, with slow breathing, "z"s
    floating up and an occasional sleepy flutter.
@@ -139,7 +182,7 @@ software/
     face/                  poses (numbers per expression), engine (animation), renderer (pygame)
     speech/                recogniser, text-to-speech and wake-word interfaces;
                            mic_gate.py keeps the mic deaf while AlfieBot talks
-    conversation/          Stage 2: intents and replies
+    conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
     spelling/              Stage 3: lists, learning mode, test mode, progress
     hardware/              simulator vs Raspberry Pi (button), auto-detected
     storage/               local JSON files (atomic writes, delete all)

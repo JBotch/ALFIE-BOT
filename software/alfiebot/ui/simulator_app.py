@@ -25,6 +25,7 @@ STATE_LABELS = {
     RobotState.SPELLING_PRACTICE: "PRACTICE", RobotState.SPELLING_TEST: "SPELL TEST",
     RobotState.CELEBRATING: "CELEBRATE", RobotState.ERROR: "ERROR",
 }
+QUICK_PHRASES = ("Hey AlfieBot", "I'm good", "How are you?", "Tell me a joke")
 EXAMPLE_LIST = Path(__file__).resolve().parents[2] / "examples" / "spelling_list_example.json"
 
 
@@ -99,7 +100,7 @@ class SimulatorApp:
         y = 330
         self.y_mic = y
         self.mic_btn = add((px, y + 24, 150, 28), "Microphone: off", self._toggle_mic, size=16)
-        self.ptt_btn = add((px + 158, y + 24, 170, 28), "Hold to talk (Space)",
+        self.ptt_btn = add((px + 158, y + 24, 170, 28), "Robot button (Space)",
                            on_press=self._button_down, on_release=self._button_up, size=16)
 
         # Simulated speech.
@@ -108,15 +109,19 @@ class SimulatorApp:
         self.text_input = w.TextInput((px, y + 22, inner - 82, 32), self._submit_text,
                                       "Type what you'd say, then Enter")
         add((px + inner - 74, y + 22, 74, 32), "Send", self.text_input.submit)
+        bw = (inner - 3 * 6) // 4
+        for i, phrase in enumerate(QUICK_PHRASES):
+            add((px + i * (bw + 6), y + 62, bw, 26), phrase,
+                (lambda p=phrase: self._submit_text(p)), size=15)
 
         # Spelling homework (Stage 3).
-        y = 478
+        y = 508
         self.y_spelling = y
         for i, label in enumerate(("Add words", "Practise", "Test")):
             add((px + i * 104, y + 48, 96, 27), label, enabled=False, size=16)
 
         # Parent area.
-        y = 570
+        y = 594
         self.y_parent = y
         self.delete_btn = add((px, y + 46, 170, 28), "Delete local data", self._delete_data, size=16)
         add((px + 178, y + 46, inner - 178, 28), "Face full screen (F11)",
@@ -270,7 +275,10 @@ class SimulatorApp:
         self.stop_btn.enabled = running
         pygame.draw.circle(s, colour, (px + 222, 65), 7)
         w.draw_text(s, "Running" if running else "Stopped (asleep)", (px + 236, 57), colour, 19)
-        w.draw_text(s, f"State: {robot.state.value}", (px, self.y_status), w.TEXT, 20)
+        state_text = f"State: {robot.state.value}"
+        if robot.state.value in ("LISTENING", "SPELLING_SETUP"):
+            state_text += f" ({max(0, robot.listen_time_left):.0f}s)"
+        w.draw_text(s, state_text, (px, self.y_status), w.TEXT, 20)
         face_text = robot.expression.value
         if robot.expression_override:
             face_text += " (preview)"
@@ -302,7 +310,7 @@ class SimulatorApp:
         self.mic_btn.label = "Microphone: on" if self.mic_requested else "Microphone: off"
         self.ptt_btn.selected = robot.platform.button.is_pressed
         ww = robot.platform.wake_word
-        w.draw_text(s, "Wake word: " + ("on" if ww.configured else "not configured (type \"Hey AlfieBot\")"),
+        w.draw_text(s, "Wake word: " + ("on" if ww.configured else "no detector yet, type \"Hey AlfieBot\" or press the button"),
                     (px + 0, self.y_mic + 58), w.TEXT_DIM, 15, max_width=inner)
 
         self._section(self.y_input, "Simulated speech")
@@ -326,7 +334,7 @@ class SimulatorApp:
 
         for b in self.buttons:
             b.draw(s, mouse)
-        w.draw_text(s, "Space = robot button   T = type   1-7 faces   F11 full-screen face",
+        w.draw_text(s, "Space = robot button   T or Enter = type   1-7 faces   F11 full-screen face",
                     (px, self.panel.bottom - 22), w.TEXT_DIM, 15, max_width=inner)
 
     _example_cache = None

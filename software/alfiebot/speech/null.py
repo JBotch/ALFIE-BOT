@@ -26,16 +26,38 @@ class NoSpeechRecognizer(SpeechRecognizer):
 
 
 class TranscriptOnlyTTS(TextToSpeech):
-    """Shows what AlfieBot would say instead of speaking it."""
+    """Shows what AlfieBot would say instead of speaking it.
+
+    It still "talks" for as long as the sentence would take to say, so the
+    mouth animation and state changes behave as they will with real speech.
+    """
 
     name = "transcript only"
+    SECONDS_PER_CHARACTER = 0.055  # roughly 150 words a minute
+    MIN_SECONDS = 0.8
 
     def __init__(self):
         self.spoken = []
+        self._remaining = 0.0
+
+    @classmethod
+    def estimate_seconds(cls, text: str) -> float:
+        return max(cls.MIN_SECONDS, len(text) * cls.SECONDS_PER_CHARACTER)
 
     def speak(self, text: str) -> None:
         self.spoken.append(text)
-        log.info("(speech output disabled) AlfieBot would say: %s", text)
+        self._remaining = self.estimate_seconds(text)
+        log.debug("(no speech output yet) AlfieBot says: %s", text)
+
+    @property
+    def speaking(self) -> bool:
+        return self._remaining > 0
+
+    def stop(self) -> None:
+        self._remaining = 0.0
+
+    def update(self, dt: float) -> None:
+        self._remaining = max(0.0, self._remaining - dt)
 
 
 class NoWakeWordDetector(WakeWordDetector):

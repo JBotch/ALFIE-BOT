@@ -55,6 +55,9 @@ class TextToSpeech(ABC):
     def stop(self) -> None:
         pass
 
+    def update(self, dt: float) -> None:
+        """Called every frame (lets simple engines track timing)."""
+
 
 class WakeWordDetector(ABC):
     """Listens for "Hey AlfieBot". Replace with a real offline engine later."""

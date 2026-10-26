@@ -72,7 +72,8 @@ def test_button_press_wakes_robot():
     robot, _ = make_robot()
     robot.platform.button.press()
     robot.update(0.016)
-    assert robot.running and robot.state == RobotState.IDLE
+    assert robot.running
+    assert robot.state == RobotState.SPEAKING  # "Yes? I'm listening!"
 
 
 def test_no_fake_wake_word_or_microphone():

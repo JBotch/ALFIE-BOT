@@ -28,6 +28,12 @@ DEFAULTS = {
         "transition_speed": 6.0,
         "show_mouth": True,
     },
+    "conversation": {
+        "listen_timeout": 10.0,
+        "sleep_after_idle": 300.0,
+        "thinking_time": 0.7,
+        "wake_delay": 0.9,
+    },
     "hardware": {"button_gpio_pin": 17},
     "privacy": {"microphone_enabled": False, "keep_audio_recordings": False},
     "data_dir": "data",
