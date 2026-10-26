@@ -1,0 +1,2 @@
+# Runtime: everything works offline.
+pygame>=2.5

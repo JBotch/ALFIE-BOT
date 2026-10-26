@@ -1,0 +1,36 @@
+{
+  "_comment": "AlfieBot settings. Keys starting with _ are ignored. Delete a key to use its built-in default.",
+  "robot": {
+    "name": "AlfieBot",
+    "wake_phrase": "hey alfiebot"
+  },
+  "platform": "auto",
+  "display": {
+    "_comment": "The 5-inch Pi display is 1280x720 in landscape. Lower supersample or glow if the Pi runs slowly.",
+    "width": 1280,
+    "height": 720,
+    "fullscreen_on_pi": true,
+    "fps": 60,
+    "supersample": 2,
+    "glow": 1.0,
+    "hide_mouse_in_fullscreen": true
+  },
+  "simulator": {
+    "window_width": 1280,
+    "window_height": 720
+  },
+  "face": {
+    "start_expression": "sleeping",
+    "transition_speed": 6.0,
+    "show_mouth": true
+  },
+  "hardware": {
+    "button_gpio_pin": 17
+  },
+  "privacy": {
+    "_comment": "Parent settings. The microphone stays off until a parent turns it on. Audio is never saved unless keep_audio_recordings is true.",
+    "microphone_enabled": false,
+    "keep_audio_recordings": false
+  },
+  "data_dir": "data"
+}
