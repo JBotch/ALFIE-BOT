@@ -29,7 +29,7 @@ DEFAULTS = {
         "show_mouth": True,
     },
     "conversation": {
-        "listen_timeout": 10.0,
+        "listen_timeout": 60.0,
         "sleep_after_idle": 300.0,
         "thinking_time": 0.7,
         "wake_delay": 0.9,

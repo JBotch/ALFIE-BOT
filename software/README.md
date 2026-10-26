@@ -17,7 +17,7 @@ Raspberry Pi 5.
   were speaking. AlfieBot only listens after **"Hey AlfieBot"** or the robot
   button (Space). "Hey AlfieBot, tell me a joke" works in one go.
 - The full flow: wake (eyes open, greeting) -> LISTENING -> THINKING ->
-  SPEAKING -> LISTENING. After 10 s with no answer AlfieBot goes back to
+  SPEAKING -> LISTENING. After 1 minute with no answer AlfieBot goes back to
   IDLE, and after 5 minutes idle it falls asleep. Text typed while it's
   talking is answered straight after.
 - Deterministic intents: how are you, what can you do, jokes, name, who made
@@ -141,7 +141,7 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
    something it doesn't know (it should look confused and say what it can do).
 4. Type "How are you?" while it's IDLE: it should ignore you and remind you
    to say "Hey AlfieBot" first.
-5. Wait 10 s while it's listening (back to idle), and say "goodbye" (asleep).
+5. Wait 1 minute while it's listening (back to idle), and say "goodbye" (asleep).
 6. Press Space while it's talking: it stops and listens.
 7. Read through `responses.json` and change anything that doesn't sound like
    AlfieBot to you and Alfie.
