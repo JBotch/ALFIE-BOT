@@ -13,6 +13,7 @@ from alfiebot.core.states import Expression, RobotState
 from alfiebot.ui import widgets as w
 from alfiebot.ui.face_view import FaceView
 from alfiebot.ui.letter_test_panel import LetterTestPanel
+from alfiebot.ui.voice_panel import VoicePanel
 from alfiebot.ui.log_capture import MemoryLogHandler
 from alfiebot.ui.spelling_panel import SpellingPanel
 
@@ -102,6 +103,7 @@ class SimulatorApp:
         # Microphone and button.
         y = 300
         self.y_mic = y
+        add((px + inner - 110, y - 3, 110, 22), "Voice", self._toggle_voice, size=15)
         self.mic_btn = add((px, y + 24, 130, 28), "Mic: on", self._toggle_mic, size=16)
         self.mode_btn = add((px + 136, y + 24, 140, 28), "Mode: open", self._toggle_mic_mode, size=16)
         self.ptt_btn = add((px + 282, y + 24, inner - 282, 28), "Button (Space)",
@@ -128,13 +130,14 @@ class SimulatorApp:
         self.y_spelling = y
         bw = (inner - 3 * 6) // 4
         for i, (label, action) in enumerate((
-                ("Lists", lambda: self.spelling.toggle("lists")),
+                ("Lists", self._toggle_lists),
                 ("Add by voice", lambda: self.robot.start_spelling("add")),
                 ("Practise", lambda: self.robot.start_spelling("practice")),
                 ("Test", lambda: self.robot.start_spelling("test")))):
             add((px + i * (bw + 6), y + 48, bw, 27), label, action, size=16)
         self.spelling = SpellingPanel(self.robot, (12, 12, self.bezel.width, H - 24))
         self.letter_test = LetterTestPanel(self.robot, (12, 12, self.bezel.width, H - 24))
+        self.voice = VoicePanel(self.robot, self.config, (12, 12, self.bezel.width, H - 24))
         add((px + inner - 110, y - 3, 110, 22), "Letter test", self._toggle_letter_test, size=15)
 
         # Parent area.
@@ -156,8 +159,20 @@ class SimulatorApp:
         self.robot.handle_text(text, "simulated", confidence, words)
 
     def _toggle_letter_test(self):
-        self.spelling.open = False
+        self.spelling.open = self.voice.open = False
         self.letter_test.toggle()
+
+    def _toggle_lists(self):
+        self.voice.open = False
+        if self.letter_test.open:
+            self.letter_test.toggle()
+        self.spelling.toggle("lists")
+
+    def _toggle_voice(self):
+        self.spelling.open = False
+        if self.letter_test.open:
+            self.letter_test.toggle()
+        self.voice.toggle()
 
     def _toggle_mic(self):
         rec = self.robot.platform.recognizer
@@ -245,7 +260,7 @@ class SimulatorApp:
         if self.text_input.handle(event):
             self.spelling.input.focused = False
             return
-        if self.letter_test.handle(event):
+        if self.letter_test.handle(event) or self.voice.handle(event):
             return
         if self.spelling.handle(event):
             if self.spelling.input.focused and self.text_input.focused:
@@ -288,6 +303,7 @@ class SimulatorApp:
         self._draw_panel(mouse, dt)
         self.spelling.draw(s, mouse, dt)
         self.letter_test.draw(s, mouse, dt)
+        self.voice.draw(s, mouse, dt)
 
     def _draw_transcript(self):
         colours = {"user": w.TEXT, "robot": w.ACCENT, "system": w.TEXT_DIM}

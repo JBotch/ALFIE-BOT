@@ -34,24 +34,39 @@ def fake_engine(tmp_path, body):
 
 
 @posix_only
-def test_espeak_runs_in_background_and_can_be_stopped(tmp_path):
+def test_espeak_runs_in_background_says_letters_separately_and_can_be_stopped(tmp_path):
     out = tmp_path / "said.txt"
-    cmd = fake_engine(tmp_path, f'cat > "{out}"\nsleep 0.4\n')
+    cmd = fake_engine(tmp_path, f'cat >> "{out}"\necho "|$*" >> "{out}"\nsleep 0.05\n')
     tts = EspeakTTS(command=cmd)
-    tts.speak("Because. B-E-C-A-U-S-E.")
+    tts.speak("Because. B-E-C.", profile="teacher")
     assert tts.speaking  # returns at once; doesn't block the animation
-    wait_until_quiet(tts, 5)
+    wait_until_quiet(tts, 10)
     assert not tts.speaking
-    assert out.read_text() == "Because. B, E, C, ay, U, S, E."
-    tts.speak("A long sentence")
+    calls = out.read_text().strip().split("\n")
+    said = [c.split("|")[0] for c in calls]
+    assert said == ["Because.", "B", "E", "C"]  # one letter per call, never "bec"
+    assert all("-s 140" in c for c in calls)  # teacher: slower (160 words a minute x 0.88)
+    tts.speak("A long sentence. And another one. And more.")
     tts.stop()
     assert not tts.speaking
 
 
 @posix_only
+def test_espeak_profiles_change_pitch_and_volume(tmp_path):
+    tts = EspeakTTS(command=fake_engine(tmp_path, "cat > /dev/null\n"))
+    excited, sleepy = tts.args(tts.profile("excited")), tts.args(tts.profile("sleepy"))
+    assert int(excited[excited.index("-p") + 1]) > int(sleepy[sleepy.index("-p") + 1])
+    assert int(excited[excited.index("-a") + 1]) > int(sleepy[sleepy.index("-a") + 1])
+
+
+@posix_only
 def test_windows_voice_protocol(tmp_path):
     # Stands in for PowerShell: READY first, then DONE after each line.
-    cmd = fake_engine(tmp_path, 'echo "READY Test Voice"\nwhile read line; do sleep 0.2; echo DONE; done\n')
+    log_file = tmp_path / "lines.txt"
+    cmd = fake_engine(tmp_path, 'echo "READY Test Voice"\nwhile read line; do echo "$line" >> '
+                      f'"{log_file}"; '
+                      'if [ "$line" = "#VOICES" ]; then echo "VOICE Microsoft Hazel Desktop"; fi; '
+                      'sleep 0.05; echo DONE; done\n')
     tts = WindowsTTS(command=cmd, voice="Hazel'; rm -rf /")
     assert "$want = 'Hazel rm -rf '" in tts.script  # quotes stripped: stays a plain name
     tts.speak("Hello there")
@@ -59,12 +74,19 @@ def test_windows_voice_protocol(tmp_path):
     wait_until_quiet(tts, 5)
     assert not tts.speaking
     assert tts.voice_name == "Test Voice"
-    tts.speak("Interrupt me")
+    tts.speak("Spell it. C-A-T.", profile="sleepy")
+    wait_until_quiet(tts, 5)
+    lines = log_file.read_text().split("\n")
+    assert lines[:1] == ["Hello there"]
+    assert "#RATE -2" in lines and "#VOLUME 63" in lines  # sleepy: slower and quieter
+    assert lines[-5:-1] == ["Spell it.", "C", "ay", "T"]
+    tts.speak("Interrupt me. Please do.")
     tts.stop()
     assert not tts.speaking
     tts.speak("Back again")  # restarts the engine after a stop
     wait_until_quiet(tts, 5)
     assert not tts.speaking
+    assert tts.available_voices() == ["Microsoft Hazel Desktop"]
     tts.close()
 
 
@@ -226,7 +248,7 @@ def test_grammar_is_passed_to_vosk(recogniser):
     recogniser.set_grammar(["bee", "see"])
     recogniser.start_listening()
     FakeSoundDevice.streams[-1].callback(word("bee"), 0, None, None)
-    assert wait_for(lambda: FakeVosk.recognizers[-1].grammar == ["bee", "see", "[unk]"])
+    assert wait_for(lambda: FakeVosk.recognizers and FakeVosk.recognizers[-1].grammar == ["bee", "see", "[unk]"])
 
 
 def test_unusable_vosk_module_is_reported(tmp_path):

@@ -28,26 +28,47 @@ class NoSpeechRecognizer(SpeechRecognizer):
 class TranscriptOnlyTTS(TextToSpeech):
     """Shows what AlfieBot would say instead of speaking it.
 
-    It still "talks" for as long as the sentence would take to say, so the
-    mouth animation and state changes behave as they will with real speech.
+    It still "talks" for as long as the sentence would take to say (at the
+    voice profile's pace), so the mouth animation and state changes behave
+    as they will with real speech.
     """
 
     name = "transcript only"
     SECONDS_PER_CHARACTER = 0.055  # roughly 150 words a minute
+    SECONDS_PER_LETTER = 0.35
     MIN_SECONDS = 0.8
 
-    def __init__(self):
+    def __init__(self, profiles=None):
+        from alfiebot.speech.voice_profiles import DEFAULT_PROFILES
+
+        self.profiles = dict(profiles or DEFAULT_PROFILES)
+        self.speed = 1.0
         self.spoken = []
+        self.profiles_used = []
         self._remaining = 0.0
 
     @classmethod
-    def estimate_seconds(cls, text: str) -> float:
-        return max(cls.MIN_SECONDS, len(text) * cls.SECONDS_PER_CHARACTER)
+    def estimate_seconds(cls, text: str, profile=None) -> float:
+        if profile is None:
+            return max(cls.MIN_SECONDS, len(text) * cls.SECONDS_PER_CHARACTER)
+        from alfiebot.speech.text import Pause, Say, plan_speech
 
-    def speak(self, text: str) -> None:
+        total = 0.0
+        for seg in plan_speech(text, profile):
+            if isinstance(seg, Pause):
+                total += seg.seconds
+            elif isinstance(seg, Say):
+                total += len(seg.text) * cls.SECONDS_PER_CHARACTER / profile.rate
+            else:
+                total += cls.SECONDS_PER_LETTER / profile.rate
+        return max(cls.MIN_SECONDS, total)
+
+    def speak(self, text: str, profile=None) -> None:
+        p = self.profiles.get(profile or "normal") or self.profiles["normal"]
         self.spoken.append(text)
-        self._remaining = self.estimate_seconds(text)
-        log.debug("(no speech output yet) AlfieBot says: %s", text)
+        self.profiles_used.append(p.name)
+        self._remaining = self.estimate_seconds(text, p) / max(0.3, self.speed)
+        log.debug("(no speech output) AlfieBot says (%s): %s", p.name, text)
 
     @property
     def speaking(self) -> bool:

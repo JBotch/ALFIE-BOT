@@ -4,18 +4,53 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.5: spelling recognition upgrade** (Stage 4 of 5, plus the
-first half of the speech recognition and voice upgrade).
+**Version 0.6: spelling recognition and voice upgrade** (Stage 4 of 5,
+plus the speech recognition and voice upgrade).
 
 > Tested on Linux with Python 3.13 and pygame 2.6.1 (all automated tests,
 > plus headless launches of both apps, and the espeak-ng voice). The speech
 > recogniser was tested with stand-in recognition results only, because the
 > test machine has no microphone and couldn't download the speech model.
 > Version 0.4 also ran on Windows 11 with Python 3.13 and a real microphone.
+> The Piper voice engine was tested with a stand-in voice only, because the
+> test machine couldn't download Piper voices.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested.
 
-## What version 0.5 adds: spelling recognition
+## What version 0.6 adds: a better voice
+
+- **Piper voices** (offline, natural-sounding, British English) are now
+  the preferred voice. `pip install -r requirements.txt` installs Piper, and
+  `python tools/download_voice.py` downloads the default voice,
+  `en_GB-cori-medium` (about 60 MB). `--list` shows other British voices
+  (Alan, Jenny, Alba, a northern English male voice...). If Piper or the
+  voice is missing, AlfieBot uses the Windows voice (or espeak-ng on the Pi)
+  as before and says why in the panel. Adding another engine later means
+  writing one class; the conversation and tutor code don't change.
+- **Four voice profiles**, chosen automatically for each reply:
+  **normal** (friendly), **excited** (celebrations: a bit quicker),
+  **teacher** (spelling: slower, longer gaps between letters) and **sleepy**
+  (going to sleep: slow and quiet). The offline voices can't really sound
+  happy or sleepy, so a profile changes only what they can honestly change:
+  speed, volume, pauses between sentences, words and letters, pitch (espeak-ng
+  only) and, for Piper, a little more or less variation in rhythm. The
+  feeling comes from AlfieBot's wording. Tune them in `voice_profiles` in
+  `config/alfiebot.json`.
+- **Letters are always said one at a time**, never run together into a
+  word, with the profile's gap between them. `tts.speak_letters("because",
+  profile, repeat)` does this directly; spelled words in AlfieBot's replies
+  ("B-E-C-A-U-S-E") are spoken the same way.
+- **Voice panel** (button **Voice** next to Microphone): the engine and
+  voice in use, a list of voices on this computer (Piper, Windows or
+  espeak-ng) to switch between, the voice profile (Auto or one fixed),
+  speaking speed, and **Test voice** / **Test letters** buttons.
+- `python tools/check_speech.py --no-mic --profiles` plays all four profiles.
+
+New settings in `speech`: `tts_engine` (`auto` = Piper first),
+`piper_voice`, `speed` (1.0 normal), `voice_profile` (`auto` or a name),
+`speaker_device`.
+
+## What version 0.5 added: spelling recognition
 
 Conversation and spelling are now recognised differently. While Alfie
 spells a word in practice or a test:
@@ -199,6 +234,7 @@ configured" because none exists yet. Nothing pretends otherwise.
    .venv\Scripts\activate
    pip install -r requirements.txt
    python tools\download_speech_model.py
+   python tools\download_voice.py
    python run_simulator.py
    ```
 
@@ -235,12 +271,13 @@ Your spelling lists and progress are in the `data` folder, so keep it.
    .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
    .\.venv\Scripts\python.exe -m pytest -q
    .\.venv\Scripts\python.exe tools\download_speech_model.py
+   .\.venv\Scripts\python.exe tools\download_voice.py
    .\.venv\Scripts\python.exe run_simulator.py
    ```
 
    You can copy the `models` folder from `software_old` instead of
-   downloading the speech model again. The download step says so if the
-   model is already there.
+   downloading the speech model and voice again. The download steps say so
+   if they are already there.
 
    The test line should end with "passed" and no failures. Once the new
    version works, you can delete `software_old`.
@@ -266,6 +303,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 python tools/download_speech_model.py
+python tools/download_voice.py
 python -m alfiebot
 ```
 
@@ -301,9 +339,25 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel or F11 | Face full screen | Face only; F11 or Esc returns |
 | Panel | Lists / Add by voice / Practise / Test | Spelling lists and progress window, or start an activity |
 | Panel | Letter test | Letter recognition test and report |
+| Panel | Voice | Choose the voice, voice profile and speed; test them |
 | Panel | As: typing/speech, Conf: high/low | Send simulated speech as typing (marked at once) or as speech (letters build up), sure or unsure |
 | Panel | Delete local data | Click twice to delete the `data/` folder (spelling lists and progress) |
 | Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
+
+## What to test in version 0.6
+
+1. Run `python tools/download_voice.py`, then
+   `python tools/check_speech.py --no-mic --profiles`. You should hear the
+   Piper voice ("Speech output: Piper"), then the four profiles and
+   "because" spelled letter by letter, twice.
+2. In the simulator click **Voice**. Check it says "Speaking with: Piper".
+   Try **Test voice** and **Test letters** with each profile and speed.
+   Switch to a Windows voice and back.
+3. Do a practice and a test by voice: AlfieBot should use the teacher
+   voice for words and letters, the excited voice for "Brilliant!", and the
+   sleepy voice when you say goodbye.
+4. To try other British voices: `python tools/download_voice.py --list`,
+   then for example `python tools/download_voice.py en_GB-alan-medium`.
 
 ## What to test in version 0.5
 
@@ -401,13 +455,16 @@ software/
   tools/render_expressions.py   saves a PNG of every expression
   tools/check_speech.py    tests the voice and microphone on their own
   tools/letter_test.py     letter recognition test and report
+  tools/download_voice.py  downloads a Piper voice (British English)
   tests/                   automated tests (pytest)
   alfiebot/
     main.py                entry point and command-line options
     config.py              loads config/alfiebot.json over built-in defaults
     core/                  robot, state machine, states -> expressions, transcript
     face/                  poses (numbers per expression), engine (animation), renderer (pygame)
-    speech/                base.py (interfaces), tts.py (Windows voice, espeak-ng),
+    speech/                base.py (interfaces), tts.py (engine choice and fallback,
+                           Windows voice, espeak-ng), piper_tts.py (Piper voices),
+                           voice_profiles.py (normal, excited, teacher, sleepy),
                            vosk_recognizer.py (offline mic), text.py (letters for speech),
                            mic_gate.py keeps the mic deaf while AlfieBot talks,
                            letter_test.py (letter recognition test and report)
@@ -432,7 +489,9 @@ that implements the interface in `speech/base.py`.
   `privacy.microphone_enabled`), it only opens while AlfieBot is listening,
   and its status is always shown in the panel.
 - Audio is processed in memory and never saved; there is no code that
-  records it. Speech recognition runs on the computer, not online.
+  records it. Speech recognition and AlfieBot's voice (Piper, Windows or
+  espeak-ng) run on the computer, not online. The only downloads are the
+  speech model and voices, once, when you run the download tools.
 - The transcript is kept in memory only. Spelling lists and progress are
   saved as JSON in `data/` on this computer only, and **Delete local data**
   removes them.

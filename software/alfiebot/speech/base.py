@@ -48,11 +48,23 @@ class SpeechRecognizer(ABC):
 
 
 class TextToSpeech(ABC):
+    """Speech output. ``profile`` names a voice profile ("normal", "excited",
+    "teacher", "sleepy"; see voice_profiles.py); engines that can't change
+    their delivery may ignore it."""
+
     name = "base"
+    voice_name = ""
+    # Why a preferred engine wasn't used (e.g. "Piper: no voice model"), for the panel.
+    fallback_reason = ""
 
     @abstractmethod
-    def speak(self, text: str) -> None:
+    def speak(self, text: str, profile: Optional[str] = None) -> None:
         """Start speaking. Must not block the animation loop."""
+
+    def speak_letters(self, word: str, profile: Optional[str] = None, repeat: int = 1) -> None:
+        """Say a word's letters one by one ("because" -> B, E, C, A, U, S, E),
+        never as a word, ``repeat`` times."""
+        self.speak(" ".join(["-".join(word.upper())] * max(1, repeat)), profile)
 
     @property
     def speaking(self) -> bool:

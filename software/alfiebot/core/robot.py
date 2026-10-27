@@ -34,6 +34,7 @@ from alfiebot.spelling.lists import SpellingLists
 from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.tutor import CHOICES, SpellingTutor
 from alfiebot.spelling.letter_input import heard_letters, letter_grammar
+from alfiebot.speech.voice_profiles import profile_for_reply
 from alfiebot.storage.json_store import JsonStore
 
 log = logging.getLogger(__name__)
@@ -65,6 +66,9 @@ class AlfieBot:
         self.wake_delay = float(timing["wake_delay"])
         speech = config.get("speech", {})
         self.mic_mode = speech.get("mic_mode", "open")
+        # "auto" picks a voice profile for each reply; or a fixed profile name.
+        self.voice_profile = speech.get("voice_profile", "auto") or "auto"
+        self.last_profile = "normal"
         # The panel's microphone switch; it only works if a parent allowed the mic.
         self.mic_switch = True
 
@@ -297,7 +301,13 @@ class AlfieBot:
         self.transcript.add("robot", reply.text)
         self.state_machine.set_state(RobotState.SPEAKING)
         self._notify_face()  # mood may differ even if already SPEAKING
-        self.platform.tts.speak(reply.text)
+        self.last_profile = self.profile_for(reply)
+        self.platform.tts.speak(reply.text, self.last_profile)
+
+    def profile_for(self, reply: Reply) -> str:
+        if self.voice_profile != "auto":
+            return self.voice_profile
+        return profile_for_reply(reply, self.tutor.mode)
 
     def _finish_speaking(self, force_listen: bool = False) -> None:
         reply = self._current_reply

@@ -27,6 +27,7 @@ def test_letter_test_panel_and_spoken_letters_draw():
     widgets._fonts.clear()  # fonts cached by the earlier launch died with pygame.quit()
     config = load_config()
     config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
+    config["config_path"] = config["data_dir"] + "/alfiebot.json"  # don't change the real settings
     robot = AlfieBot(config, create_simulator_platform(config, speech=False))
     app = SimulatorApp(robot, config, MemoryLogHandler())
     robot.spelling_lists.add_words(robot.tutor.active_week, ["cat"])
@@ -41,4 +42,8 @@ def test_letter_test_panel_and_spoken_letters_draw():
     app.run(max_frames=3)
     app.letter_test.stop()
     assert "Letter recognition report" in app.letter_test.report
+    app._toggle_voice()
+    app.voice._set_profile("teacher")
+    app.run(max_frames=3)
+    assert robot.voice_profile == "teacher"
     pygame.quit()
