@@ -122,6 +122,38 @@ If `pip install pygame` fails on a brand-new Python version, install
 Python 3.12 instead (pygame wheels lag new Python releases), or try
 `pip install pygame-ce`, a compatible fork.
 
+### Updating to a new version on Windows
+
+Each version comes as a zip (for example `AlfieBot_software_v0.3.zip`).
+Your spelling lists and progress are in the `data` folder, so keep it.
+
+1. Close the simulator.
+2. In File Explorer, go to `C:\Users\<you>\AlfieBot`. Rename the `software`
+   folder to `software_old` (a backup).
+3. Unzip the new zip into `C:\Users\<you>\AlfieBot`, so you get a fresh
+   `software` folder next to `software_old`.
+4. Copy the `data` folder (if there is one) from `software_old` into the new
+   `software` folder.
+5. Open PowerShell and run:
+
+   ```powershell
+   cd $HOME\AlfieBot\software
+   py -3.13 -m venv .venv
+   .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
+   .\.venv\Scripts\python.exe -m pytest -q
+   .\.venv\Scripts\python.exe run_simulator.py
+   ```
+
+   The test line should end with "passed" and no failures. Once the new
+   version works, you can delete `software_old`.
+
+To just run it again later:
+
+```powershell
+cd $HOME\AlfieBot\software
+.\.venv\Scripts\python.exe run_simulator.py
+```
+
 ## Run it on Raspberry Pi OS
 
 For Raspberry Pi OS Bookworm (64-bit, desktop). Open a terminal **on the
