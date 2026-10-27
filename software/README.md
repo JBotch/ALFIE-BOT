@@ -138,7 +138,7 @@ Your spelling lists and progress are in the `data` folder, so keep it.
 
    ```powershell
    cd $HOME\AlfieBot\software
-   py -3.13 -m venv .venv
+   py -V:3.13 -m venv .venv
    .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
    .\.venv\Scripts\python.exe -m pytest -q
    .\.venv\Scripts\python.exe run_simulator.py
