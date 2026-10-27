@@ -36,5 +36,11 @@ class SimulatedButton(InteractionButton):
         return False
 
 
-def create_simulator_platform(config) -> Platform:
-    return Platform(name="simulator", button=SimulatedButton(), fullscreen_face=False)
+def create_simulator_platform(config, speech: bool = True) -> Platform:
+    platform = Platform(name="simulator", button=SimulatedButton(), fullscreen_face=False)
+    if speech:
+        from alfiebot.speech.factory import create_recognizer, create_tts
+
+        platform.tts = create_tts(config)
+        platform.recognizer = create_recognizer(config)
+    return platform

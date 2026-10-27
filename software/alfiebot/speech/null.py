@@ -10,7 +10,7 @@ log = logging.getLogger(__name__)
 class NoSpeechRecognizer(SpeechRecognizer):
     name = "none"
 
-    def __init__(self, reason: str = "No speech recogniser configured (arrives in Stage 4)"):
+    def __init__(self, reason: str = "Speech recognition is switched off in the config"):
         self._reason = reason
 
     @property

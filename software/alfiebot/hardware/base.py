@@ -37,3 +37,7 @@ class Platform:
 
     def close(self) -> None:
         self.button.close()
+        self.recognizer.stop_listening()
+        self.tts.stop()
+        if hasattr(self.tts, "close"):
+            self.tts.close()

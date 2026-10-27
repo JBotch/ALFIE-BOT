@@ -118,3 +118,13 @@ def parse_spelled_answer(text: str, source: str = "typed", confidence: float = 1
     joined = "".join(letters)
     confident = bool(joined) and not unclear and confidence >= min_confidence
     return SpelledAnswer(joined, confident)
+
+
+# Words the recogniser may hear while a spelling answer is expected: letter
+# names plus the tutor's commands. Limiting Vosk to these makes letters far
+# easier to recognise than free speech.
+SPELLING_GRAMMAR = sorted(
+    {name for names in LETTER_NAMES.values() for name in names if len(name) > 1 or name in "ai"}
+    | set(LETTER_NAMES)
+    | set("double repeat that say it again spell slower slowly give me a clue hint next word "
+          "skip pass start over stop finished yes no please i dont don't know".split()))

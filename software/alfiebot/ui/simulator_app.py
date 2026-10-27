@@ -7,6 +7,7 @@ import time
 import pygame
 
 from alfiebot import __version__
+from alfiebot.config import save_setting
 from alfiebot.core.robot import AlfieBot
 from alfiebot.core.states import Expression, RobotState
 from alfiebot.ui import widgets as w
@@ -37,7 +38,6 @@ class SimulatorApp:
         self.fps = config["display"]["fps"]
         self.store = robot.store
         self.face_fullscreen = False
-        self.mic_requested = False
         self._delete_armed_until = 0.0
         self._fps_shown = 0.0
         self.screen = None
@@ -95,10 +95,11 @@ class SimulatorApp:
                               lambda: self.robot.show_expression(None), size=16)
 
         # Microphone and button.
-        y = 330
+        y = 300
         self.y_mic = y
-        self.mic_btn = add((px, y + 24, 150, 28), "Microphone: off", self._toggle_mic, size=16)
-        self.ptt_btn = add((px + 158, y + 24, 170, 28), "Robot button (Space)",
+        self.mic_btn = add((px, y + 24, 130, 28), "Mic: on", self._toggle_mic, size=16)
+        self.mode_btn = add((px + 136, y + 24, 140, 28), "Mode: open", self._toggle_mic_mode, size=16)
+        self.ptt_btn = add((px + 282, y + 24, inner - 282, 28), "Button (Space)",
                            on_press=self._button_down, on_release=self._button_up, size=16)
 
         # Simulated speech.
@@ -127,8 +128,10 @@ class SimulatorApp:
         # Parent area.
         y = 594
         self.y_parent = y
-        self.delete_btn = add((px, y + 46, 170, 28), "Delete local data", self._delete_data, size=16)
-        add((px + 178, y + 46, inner - 178, 28), "Face full screen (F11)",
+        bw = (inner - 12) // 3
+        self.allow_mic_btn = add((px, y + 46, bw, 28), "Allow mic: no", self._toggle_allow_mic, size=16)
+        self.delete_btn = add((px + bw + 6, y + 46, bw, 28), "Delete local data", self._delete_data, size=16)
+        add((px + 2 * (bw + 6), y + 46, bw, 28), "Full-screen face",
             self._toggle_face_fullscreen, size=16)
 
     # ---- actions ---------------------------------------------------------
@@ -137,13 +140,22 @@ class SimulatorApp:
 
     def _toggle_mic(self):
         rec = self.robot.platform.recognizer
-        if not self.config["privacy"]["microphone_enabled"]:
-            log.warning("Microphone is turned off in parent settings (privacy.microphone_enabled)")
+        if not self.robot.mic_allowed_by_parent:
+            log.warning("The microphone isn't allowed. A parent can click 'Allow mic' below.")
             return
         if not rec.available:
             log.warning("Microphone unavailable: %s", rec.unavailable_reason)
             return
-        self.mic_requested = not self.mic_requested
+        self.robot.mic_switch = not self.robot.mic_switch
+
+    def _toggle_mic_mode(self):
+        self.robot.mic_mode = "push_to_talk" if self.robot.mic_mode == "open" else "open"
+        save_setting(self.config, "speech", "mic_mode", self.robot.mic_mode)
+
+    def _toggle_allow_mic(self):
+        allowed = not self.robot.mic_allowed_by_parent
+        save_setting(self.config, "privacy", "microphone_enabled", allowed)
+        log.info("Parent setting: microphone %s", "allowed" if allowed else "not allowed")
 
     def _button_down(self):
         self.robot.platform.button.press()
@@ -271,6 +283,23 @@ class SimulatorApp:
     def _section(self, y, title):
         w.draw_text(self.screen, title, (self.px, y), w.ACCENT, 19)
 
+    def _mic_status(self):
+        robot = self.robot
+        rec = robot.platform.recognizer
+        if rec.listening:
+            return w.BAD, "ON - listening"
+        if not robot.mic_allowed_by_parent:
+            return w.TEXT_DIM, "Off (not allowed by parent)"
+        if not rec.available:
+            return w.TEXT_DIM, "Off: " + (rec.unavailable_reason or "unavailable")
+        if not robot.mic_switch:
+            return w.TEXT_DIM, "Off (switched off)"
+        if robot.talking or not robot.mic_gate.mic_allowed:
+            return w.WARN, "Muted while AlfieBot talks"
+        if robot.mic_mode == "push_to_talk":
+            return w.TEXT_DIM, "Off. Hold the button to talk"
+        return w.TEXT_DIM, "Off. Opens when AlfieBot listens"
+
     def _draw_panel(self, mouse, dt):
         s = self.screen
         robot = self.robot
@@ -307,23 +336,28 @@ class SimulatorApp:
 
         # Microphone status: always visible so it's clear when it's listening.
         self._section(self.y_mic, "Microphone")
-        rec = robot.platform.recognizer
-        mic_on = self.mic_requested and rec.available and robot.mic_gate.mic_allowed
-        if mic_on:
-            dot, text = w.BAD, "LISTENING"
-        elif not self.config["privacy"]["microphone_enabled"]:
-            dot, text = w.TEXT_DIM, "Off (parent setting)"
-        elif not rec.available:
-            dot, text = w.TEXT_DIM, "Off (no recogniser yet)"
-        else:
-            dot, text = w.TEXT_DIM, "Off"
+        dot, text = self._mic_status()
         pygame.draw.circle(s, dot, (px + 112, self.y_mic + 9), 7)
-        w.draw_text(s, text, (px + 126, self.y_mic + 1), w.TEXT, 18)
-        self.mic_btn.label = "Microphone: on" if self.mic_requested else "Microphone: off"
+        w.draw_text(s, text, (px + 126, self.y_mic + 1), w.TEXT, 18, max_width=inner - 126)
+        rec = robot.platform.recognizer
+        self.mic_btn.label = "Mic: on" if robot.mic_switch else "Mic: off"
+        self.mic_btn.enabled = robot.mic_allowed_by_parent and rec.available
+        self.mode_btn.label = "Mode: open" if robot.mic_mode == "open" else "Mode: hold button"
         self.ptt_btn.selected = robot.platform.button.is_pressed
+        # Level meter and what the recogniser is hearing right now.
+        bar = pygame.Rect(px, self.y_mic + 60, 90, 10)
+        pygame.draw.rect(s, w.WIDGET, bar, border_radius=4)
+        level = getattr(rec, "level", 0.0) if rec.listening else 0.0
+        if level > 0.01:
+            fill = bar.copy()
+            fill.width = max(4, int(bar.width * level))
+            pygame.draw.rect(s, w.GOOD if level < 0.8 else w.WARN, fill, border_radius=4)
+        partial = getattr(rec, "partial", "") if rec.listening else ""
+        heard = f"Hearing: {partial}" if partial else f"Voice: {robot.platform.tts.name}"
+        w.draw_text(s, heard, (px + 100, self.y_mic + 57), w.TEXT_DIM, 16, max_width=inner - 100)
         ww = robot.platform.wake_word
-        w.draw_text(s, "Wake word: " + ("on" if ww.configured else "no detector yet, type \"Hey AlfieBot\" or press the button"),
-                    (px + 0, self.y_mic + 58), w.TEXT_DIM, 15, max_width=inner)
+        w.draw_text(s, "Wake word: " + ("on" if ww.configured else "Stage 5. Type \"Hey AlfieBot\" or press the button"),
+                    (px, self.y_mic + 78), w.TEXT_DIM, 15, max_width=inner)
 
         self._section(self.y_input, "Simulated speech")
         self.text_input.draw(s, dt)
@@ -338,11 +372,10 @@ class SimulatorApp:
         w.draw_text(s, status, (px, self.y_spelling + 24), w.TEXT_DIM, 16, max_width=inner)
 
         self._section(self.y_parent, "Parent settings")
-        privacy = self.config["privacy"]
-        w.draw_text(s, "Mic allowed: {}   Audio kept: {}".format(
-            "yes" if privacy["microphone_enabled"] else "no",
-            "yes" if privacy["keep_audio_recordings"] else "never"),
-            (px, self.y_parent + 24), w.TEXT_DIM, 16, max_width=inner)
+        w.draw_text(s, "Audio is never recorded or saved. Speech is recognised on this computer.",
+                    (px, self.y_parent + 24), w.TEXT_DIM, 16, max_width=inner)
+        self.allow_mic_btn.label = "Allow mic: yes" if robot.mic_allowed_by_parent else "Allow mic: no"
+        self.allow_mic_btn.selected = robot.mic_allowed_by_parent
         armed = time.monotonic() < self._delete_armed_until
         self.delete_btn.label = "Click again to confirm" if armed else "Delete local data"
 

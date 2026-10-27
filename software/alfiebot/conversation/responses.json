@@ -80,7 +80,7 @@
   },
   "age": {
     "mood": "happy",
-    "replies": ["I was built this year, so I'm still a very new robot!", "I'm brand new! My software is only version 0.3."]
+    "replies": ["I was built this year, so I'm still a very new robot!", "I'm brand new! My software is only version 0.4."]
   },
   "thanks": {
     "mood": "happy",

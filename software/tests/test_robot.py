@@ -9,7 +9,7 @@ from alfiebot.hardware.simulator import create_simulator_platform
 def make_robot():
     config = load_config()
     config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
-    robot = AlfieBot(config, create_simulator_platform(config))
+    robot = AlfieBot(config, create_simulator_platform(config, speech=False))
     faces = []
     robot.add_face_listener(lambda expr, talking: faces.append((expr, talking)))
     return robot, faces

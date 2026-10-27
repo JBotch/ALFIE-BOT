@@ -33,8 +33,12 @@ class SpeechRecognizer(ABC):
     def start_listening(self) -> None:
         """Open the microphone and start recognising."""
 
-    def stop_listening(self) -> None:
-        """Close the microphone."""
+    def stop_listening(self, finalise: bool = False) -> None:
+        """Close the microphone. finalise=True turns what was heard so far
+        into a result (push-to-talk release)."""
+
+    def set_grammar(self, phrases) -> None:
+        """Optionally limit recognition to these words; None allows anything."""
 
     def poll(self) -> Optional[RecognitionResult]:
         """Return a finished result if one is ready, else None."""

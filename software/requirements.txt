@@ -1,2 +1,4 @@
-# Runtime: everything works offline.
 pygame>=2.5
+# Offline speech recognition (microphone). On the Pi also: sudo apt install libportaudio2 espeak-ng
+vosk>=0.3.45
+sounddevice>=0.4

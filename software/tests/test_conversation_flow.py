@@ -14,7 +14,7 @@ def make_robot(**timing):
     config = load_config()
     config["conversation"].update(timing)
     config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
-    robot = AlfieBot(config, create_simulator_platform(config),
+    robot = AlfieBot(config, create_simulator_platform(config, speech=False),
                      ConversationEngine("AlfieBot", rng=random.Random(0)))
     states = []
     robot.state_machine.add_listener(lambda old, new: states.append(new))

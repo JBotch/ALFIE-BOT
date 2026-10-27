@@ -34,6 +34,17 @@ DEFAULTS = {
         "thinking_time": 0.7,
         "wake_delay": 0.9,
     },
+    "speech": {
+        "tts_engine": "auto",
+        "voice": "",
+        "rate": 0,
+        "volume": 90,
+        "recognizer": "vosk",
+        "vosk_model": "models/vosk-model-small-en-us-0.15",
+        "mic_mode": "open",
+        "mic_device": None,
+        "min_confidence": 0.75,
+    },
     "hardware": {"button_gpio_pin": 17},
     "privacy": {"microphone_enabled": False, "keep_audio_recordings": False},
     "data_dir": "data",
@@ -67,4 +78,21 @@ def load_config(path=None) -> dict:
     if not data_dir.is_absolute():
         data_dir = SOFTWARE_ROOT / data_dir
     config["data_dir"] = str(data_dir)
+    config["config_path"] = str(path)
     return config
+
+
+def save_setting(config: dict, section: str, key: str, value) -> None:
+    """Change one setting in memory and in the config file (keeps its comments)."""
+    config.setdefault(section, {})[key] = value
+    path = Path(config.get("config_path") or DEFAULT_CONFIG_PATH)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        data = {}
+    data.setdefault(section, {})[key] = value
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+        f.write("\n")
+    log.info("Saved setting %s.%s = %r", section, key, value)

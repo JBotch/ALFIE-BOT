@@ -11,8 +11,13 @@ conversation to the spelling tutor until the activity ends. A correct answer
 gets a short CELEBRATING bounce before AlfieBot speaks.
 
 Text that arrives while AlfieBot is thinking or talking is held and handled
-as soon as it is listening again. The microphone gate is closed whenever
-AlfieBot talks, so it can't answer its own voice.
+as soon as it is listening again.
+
+Microphone (Stage 4): only open while AlfieBot is listening (or, in
+push_to_talk mode, while the button is held), never while it is thinking,
+talking or celebrating, and only if a parent has allowed it in the config.
+The mic gate also keeps it shut for a moment after speech ends, so AlfieBot
+can't hear its own voice.
 """
 
 import logging
@@ -28,6 +33,7 @@ from alfiebot.speech.mic_gate import MicGate
 from alfiebot.spelling.lists import SpellingLists
 from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.tutor import CHOICES, SpellingTutor
+from alfiebot.spelling.words import SPELLING_GRAMMAR
 from alfiebot.storage.json_store import JsonStore
 
 log = logging.getLogger(__name__)
@@ -57,6 +63,10 @@ class AlfieBot:
         self.sleep_after_idle = float(timing["sleep_after_idle"])
         self.thinking_time = float(timing["thinking_time"])
         self.wake_delay = float(timing["wake_delay"])
+        speech = config.get("speech", {})
+        self.mic_mode = speech.get("mic_mode", "open")
+        # The panel's microphone switch; it only works if a parent allowed the mic.
+        self.mic_switch = True
 
         self.state_machine = StateMachine(RobotState.SLEEPING)
         self.conversation = conversation or ConversationEngine(self.name)
@@ -65,7 +75,8 @@ class AlfieBot:
         self.store = JsonStore(config["data_dir"])
         self.spelling_lists = SpellingLists(self.store)
         self.progress = ProgressTracker(self.store)
-        self.tutor = SpellingTutor(self.spelling_lists, self.progress)
+        self.tutor = SpellingTutor(self.spelling_lists, self.progress,
+                                   min_confidence=speech.get("min_confidence", 0.75))
         self.running = False
         # Developer override: show an expression regardless of state.
         self.expression_override = None
@@ -287,6 +298,43 @@ class AlfieBot:
     def _after(self, seconds: float, action: Callable[[], None]) -> None:
         self._timers.append((seconds, action))
 
+    # ---- microphone --------------------------------------------------------
+    @property
+    def mic_allowed_by_parent(self) -> bool:
+        return bool(self.config["privacy"]["microphone_enabled"])
+
+    @property
+    def mic_should_be_open(self) -> bool:
+        rec = self.platform.recognizer
+        if not (self.running and self.mic_switch and self.mic_allowed_by_parent and rec.available):
+            return False
+        if self.state not in LISTENING_STATES or self._timers or not self.mic_gate.mic_allowed:
+            return False
+        if self.mic_mode == "push_to_talk":
+            return self.platform.button.is_pressed
+        return True
+
+    def _update_microphone(self) -> None:
+        rec = self.platform.recognizer
+        want = self.mic_should_be_open
+        if want:
+            spelling = self.tutor.mode in ("practice", "test") and not self.tutor.awaiting_yes_no
+            rec.set_grammar(SPELLING_GRAMMAR if spelling else None)
+            if not rec.listening:
+                rec.start_listening()
+        elif rec.listening:
+            # A push-to-talk release keeps what was said; anything else drops it.
+            released = self.mic_mode == "push_to_talk" and self.state in LISTENING_STATES
+            rec.stop_listening(finalise=released)
+        if getattr(rec, "partial", "") and self.state in LISTENING_STATES:
+            # Don't time out while the child is still talking.
+            self.listen_time_left = max(self.listen_time_left, 3.0)
+        result = rec.poll()
+        if result is not None:
+            self.handle_text(result.text, "voice", result.confidence)
+            if rec.listening and not self.mic_should_be_open:
+                rec.stop_listening()  # AlfieBot is about to think and reply
+
     # ---- per-frame -------------------------------------------------------
     def update(self, dt: float) -> None:
         self.state_machine.update(dt)
@@ -303,6 +351,12 @@ class AlfieBot:
                 action()
 
         state = self.state
+        if state == RobotState.SPEAKING and self._current_reply and self.platform.tts.speaking:
+            # Safety net in case a speech engine never reports that it finished.
+            limit = 8.0 + 0.15 * len(self._current_reply.text)
+            if self.state_machine.time_in_state > limit:
+                log.warning("Speech didn't finish after %.0f s; stopping it", limit)
+                self.platform.tts.stop()
         if state == RobotState.SPEAKING and not self.platform.tts.speaking and self._current_reply:
             self._finish_speaking()
         elif state in LISTENING_STATES:
@@ -314,6 +368,8 @@ class AlfieBot:
               and self.state_machine.time_in_state >= self.sleep_after_idle):
             log.info("Idle for %.0f s; going to sleep", self.sleep_after_idle)
             self.state_machine.set_state(RobotState.SLEEPING)
+
+        self._update_microphone()
 
         button = self.platform.button
         if button.poll_pressed():

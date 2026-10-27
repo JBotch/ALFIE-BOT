@@ -1,7 +1,8 @@
 """Speech interfaces: recognition, text-to-speech and wake-word detection.
 
-Each is an abstract interface so an offline engine (for example Vosk,
-Piper or openWakeWord) can be plugged in later without touching the rest
-of the app. Stage 1 ships only the "not configured" implementations, which
-say honestly that no real engine is present.
+Each is an abstract interface (``base.py``) so engines can be swapped
+without touching the rest of the app. Built in: Windows voices and
+espeak-ng for speech output (``tts.py``), Vosk for offline recognition
+(``vosk_recognizer.py``). The wake word (Stage 5) is still a "not
+configured" placeholder that says so honestly.
 """

@@ -4,12 +4,47 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.3, Stage 3 of 5: the spelling homework tutor.**
+**Version 0.4, Stage 4 of 5: AlfieBot talks and listens.**
 
-> Tested on Linux with Python 3.13 and pygame 2.6.1 (156 automated tests,
-> plus headless launches of both apps). Stages 1 and 2 also ran on Windows 11
-> with Python 3.13. **It has not been run on Raspberry Pi hardware yet.** The
-> Pi-specific code (GPIO button) is written but untested.
+> Tested on Linux with Python 3.13 and pygame 2.6.1 (176 automated tests,
+> plus headless launches of both apps, and the espeak-ng voice). The speech
+> recogniser was tested with stand-in audio only, because the test machine
+> has no microphone and couldn't download the speech model. Stages 1 to 3
+> also ran on Windows 11 with Python 3.13. **It has not been run on Raspberry
+> Pi hardware yet.** The Pi-specific code (GPIO button) is written but untested.
+
+## What Stage 4 adds
+
+- **AlfieBot speaks.** On Windows it uses the built-in Windows voices; on
+  the Pi it uses espeak-ng. Both are offline. Spelled words are read letter
+  by letter with pauses ("B, E, C, ay, U, S, E"). The mouth moves for as long
+  as the voice is actually talking, and the robot button cuts it off.
+  Choose a voice, speed and volume in `config/alfiebot.json` (`speech`).
+- **AlfieBot listens.** Offline speech recognition with Vosk. Nothing is
+  recorded or saved and nothing goes over the internet. The speech model
+  (about 40 MB) is downloaded once with `python tools/download_speech_model.py`.
+- **The microphone only opens while AlfieBot is listening**, never while
+  it's idle, thinking or talking, and stays shut for a moment after it
+  stops talking, so it can't answer its own voice. Wake it with "Hey
+  AlfieBot" typed or the button (a real wake word is Stage 5).
+- Two microphone modes: **open** (listens whenever AlfieBot is listening)
+  or **hold button** (push-to-talk: only while Space / the robot button is
+  held). Switch with the **Mode** button.
+- **Clear microphone status** in the panel: a red dot and "ON - listening"
+  when the mic is open, "Muted while AlfieBot talks", or why it's off, plus a
+  sound level meter and the words being heard.
+- **Parent switch:** the mic is off until a parent clicks **Allow mic** in
+  Parent settings (saved in the config). **Mic: on/off** switches it off
+  for a while without changing the parent setting.
+- **Spelling by voice:** while waiting for a spelling answer, the
+  recogniser only listens for letter names and tutor commands, which makes
+  letters much easier to recognise. Unsure answers are read back for a yes
+  or no before marking (from Stage 3).
+- `python tools/check_speech.py` tests the voice and microphone on their
+  own (says a sentence, lists microphones, listens for 5 seconds).
+
+The speech model is US English. If it struggles with your accents, a larger
+model can be set in `speech.vosk_model`.
 
 ## What Stage 3 adds
 
@@ -71,8 +106,7 @@ Raspberry Pi 5.
   listening.
 - The robot button wakes AlfieBot, cuts it off mid-sentence to listen, or
   keeps it listening longer.
-- There's no voice yet (Stage 4). AlfieBot's lines appear in the transcript
-  and it "talks" for as long as the sentence would take to say.
+- AlfieBot's lines appear in the transcript (and, from Stage 4, are spoken).
 
 ## What Stage 1 does
 
@@ -106,6 +140,7 @@ configured" because none exists yet. Nothing pretends otherwise.
    py -m venv .venv
    .venv\Scripts\activate
    pip install -r requirements.txt
+   python tools\download_speech_model.py
    python run_simulator.py
    ```
 
@@ -114,7 +149,7 @@ configured" because none exists yet. Nothing pretends otherwise.
 
 If you used the new **Python install manager** from python.org, it installs
 the newest Python (3.15 or later), which pygame doesn't support yet. Run
-`py install 3.13` and create the venv with `py -3.13 -m venv .venv`.
+`py install 3.13` and create the venv with `py -V:3.13 -m venv .venv`.
 
 To run the tests: `pip install -r requirements-dev.txt` then `python -m pytest`.
 
@@ -141,8 +176,13 @@ Your spelling lists and progress are in the `data` folder, so keep it.
    py -V:3.13 -m venv .venv
    .\.venv\Scripts\python.exe -m pip install -r requirements-dev.txt
    .\.venv\Scripts\python.exe -m pytest -q
+   .\.venv\Scripts\python.exe tools\download_speech_model.py
    .\.venv\Scripts\python.exe run_simulator.py
    ```
+
+   You can copy the `models` folder from `software_old` instead of
+   downloading the speech model again. The download step says so if the
+   model is already there.
 
    The test line should end with "passed" and no failures. Once the new
    version works, you can delete `software_old`.
@@ -161,12 +201,13 @@ Pi's desktop** (not over SSH, because the window needs the screen):
 
 ```bash
 sudo apt update
-sudo apt install -y git python3-venv
+sudo apt install -y git python3-venv espeak-ng libportaudio2
 git clone https://github.com/JBotch/ALFIE-BOT.git
 cd ALFIE-BOT/software
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
+python tools/download_speech_model.py
 python -m alfiebot
 ```
 
@@ -195,14 +236,34 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Start / Stop | Wake the robot (IDLE) / put it to sleep. Typed input is ignored while stopped |
 | Panel | Set state | Any of the ten states; the face follows |
 | Panel or keys 1-7 | Preview expression | Show one expression; 0 or "Follow state" goes back to the state's face |
-| Panel or Space | Robot button | Wakes AlfieBot, interrupts it to listen, or keeps it listening. Real push-to-talk arrives in Stage 4 |
+| Panel or Space | Robot button | Wakes AlfieBot, interrupts it to listen, or keeps it listening. In "hold button" mode, hold it while you talk |
+| Panel | Mic: on/off, Mode | Switch the microphone off for now; open mic or hold-to-talk |
+| Panel | Allow mic | Parent setting: the microphone can't open until this says yes |
 | Panel, T or Enter | Simulated speech | Type what you would say, or click a quick phrase |
 | Panel or F11 | Face full screen | Face only; F11 or Esc returns |
 | Panel | Lists / Add by voice / Practise / Test | Spelling lists and progress window, or start an activity |
 | Panel | Delete local data | Click twice to delete the `data/` folder (spelling lists and progress) |
 | Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
 
-## What to test before Stage 4
+## What to test before Stage 5
+
+1. Run `python tools/check_speech.py`. You should hear AlfieBot speak, see
+   your microphone listed, and see what you say written out.
+2. In the simulator, click **Allow mic**. The status should say the mic
+   opens when AlfieBot listens.
+3. Type "Hey AlfieBot". AlfieBot speaks the greeting (status "Muted while
+   AlfieBot talks"), then the red dot comes on. Say "I'm good", "How are
+   you?", "Tell me a joke". Watch the level meter and "Hearing:" line.
+4. Check AlfieBot never answers its own voice, even with the speakers loud.
+5. Practise and test spellings by voice, spelling letter by letter ("bee ee
+   see..."). If it mishears, it should ask "did you say...?" rather than mark
+   you wrong.
+6. Switch **Mode** to "hold button" and talk while holding Space.
+7. Press Space while AlfieBot is talking: it should stop mid-word.
+8. Try a different voice: on Windows set `"voice": "Hazel"` (or another
+   installed voice) in `config/alfiebot.json`.
+
+## Stage 3 checks
 
 1. Open **Lists**, click **Load example list** (or type your own week's
    words), check them and save. Close the window.
@@ -267,7 +328,8 @@ software/
     config.py              loads config/alfiebot.json over built-in defaults
     core/                  robot, state machine, states -> expressions, transcript
     face/                  poses (numbers per expression), engine (animation), renderer (pygame)
-    speech/                recogniser, text-to-speech and wake-word interfaces;
+    speech/                base.py (interfaces), tts.py (Windows voice, espeak-ng),
+                           vosk_recognizer.py (offline mic), text.py (letters for speech),
                            mic_gate.py keeps the mic deaf while AlfieBot talks
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
     spelling/              words.py (letters, spoken letter names), lists.py (weekly lists),
@@ -285,9 +347,11 @@ that implements the interface in `speech/base.py`.
 ## Privacy
 
 - Everything runs offline. There is no internet chatbot.
-- The microphone is off by default (`privacy.microphone_enabled` in the
-  config) and its status is always shown in the panel.
-- Audio is never saved (`privacy.keep_audio_recordings` is false).
+- The microphone is off until a parent allows it (**Allow mic**, saved as
+  `privacy.microphone_enabled`), it only opens while AlfieBot is listening,
+  and its status is always shown in the panel.
+- Audio is processed in memory and never saved; there is no code that
+  records it. Speech recognition runs on the computer, not online.
 - The transcript is kept in memory only. Spelling lists and progress are
   saved as JSON in `data/` on this computer only, and **Delete local data**
   removes them.

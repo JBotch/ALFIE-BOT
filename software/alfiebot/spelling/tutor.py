@@ -52,7 +52,9 @@ def load_responses(path=RESPONSES_PATH) -> dict:
 
 class SpellingTutor:
     def __init__(self, lists: SpellingLists, progress: ProgressTracker,
-                 rng: random.Random = None, responses: dict = None):
+                 rng: random.Random = None, responses: dict = None,
+                 min_confidence: float = 0.75):
+        self.min_confidence = min_confidence
         self.lists = lists
         self.progress = progress
         self.rng = rng or random.Random()
@@ -84,6 +86,10 @@ class SpellingTutor:
     def hide_words(self) -> bool:
         """True during a test, so the panel doesn't show the answers."""
         return self.mode == "test"
+
+    @property
+    def awaiting_yes_no(self) -> bool:
+        return self._pending_answer is not None or self._pending_word is not None
 
     @property
     def current_word(self) -> Optional[str]:
@@ -227,7 +233,7 @@ class SpellingTutor:
 
     # ---- answers ---------------------------------------------------------
     def _read_answer(self, text, source, confidence):
-        answer = parse_spelled_answer(text, source, confidence)
+        answer = parse_spelled_answer(text, source, confidence, self.min_confidence)
         if not answer.letters:
             return None, self._say("nothing_heard", mood=Expression.CONFUSED)
         if not answer.confident:

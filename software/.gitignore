@@ -5,3 +5,4 @@ __pycache__/
 # Local data (spelling lists, progress) stays on the device.
 data/
 expression_previews/
+models/
