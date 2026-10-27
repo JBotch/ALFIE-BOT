@@ -4,8 +4,8 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.6: spelling recognition and voice upgrade** (Stage 4 of 5,
-plus the speech recognition and voice upgrade).
+**Version 0.7: Bubbly Bot voice** (Stage 4 of 5, plus the speech
+recognition and voice upgrades).
 
 > Tested on Linux with Python 3.13 and pygame 2.6.1 (all automated tests,
 > plus headless launches of both apps, and the espeak-ng voice). The speech
@@ -13,11 +13,62 @@ plus the speech recognition and voice upgrade).
 > test machine has no microphone and couldn't download the speech model.
 > Version 0.4 also ran on Windows 11 with Python 3.13 and a real microphone.
 > The Piper voice engine was tested with a stand-in voice only, because the
-> test machine couldn't download Piper voices.
+> test machine couldn't download Piper voices (version 0.6 has since run
+> with the real Piper voice on Windows). The online comparison voice was
+> tested with a stand-in service only.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested.
 
-## What version 0.6 adds: a better voice
+## What version 0.7 adds: Bubbly Bot
+
+- **A new voice personality, Bubbly Bot**: a cheerful, friendly cartoon
+  robot. Choose **Classic** (the v0.6 voice) or **Bubbly Bot** in the Voice
+  panel to compare them; the choice is saved. Bubbly Bot is the default.
+- **The personality isn't just pitch.** Bubbly Bot speaks a little faster,
+  with shorter gaps between sentences and more variation in rhythm (Piper's
+  expressiveness), a gentle pitch lift (+2.5 semitones: brighter, not
+  squeaky), sometimes starts celebrations with "Woohoo!", "Yay!" or
+  "Beep boop, yes!", and plays little sound effects.
+- **Bubbly Bot's profiles**, chosen automatically: **Bubbly Conversation**
+  (chatting), **Bubbly Excited** (celebrations), **Clear Spelling Teacher**
+  (spelling: noticeably slower than chatting, steadier, with long gaps
+  between letters, which are always said one at a time) and **Bubbly
+  Sleepy**. All are tunable in `voice_profiles` in `config/alfiebot.json`.
+- **Speed, pitch and volume** settings in the Voice panel (and `speed`,
+  `pitch`, `volume` in `speech`). Pitch is in semitones, added to the
+  profile's own pitch. It works with Piper (the voice is made slightly
+  slower, then played back faster, so it's higher but not sped up),
+  espeak-ng, and Windows voices that support it.
+- **Sound effects**: a rising "boot up" chirp when AlfieBot wakes, a soft
+  blip when it starts listening, and a sparkly arpeggio when celebrating.
+  They're made by the code (no sound files), short and quiet. On for Bubbly
+  Bot, off for Classic; switch them in the Voice panel or in `sounds`.
+- **Voice test screen**: Voice panel, **Try it** tab. Example greetings,
+  jokes and spelling (a new word, letters spelled out, "B for ball, D for
+  dog or P for pig?", praise, goodnight), played with Classic, Bubbly Bot,
+  the online voice, or **Compare both** (Classic then Bubbly Bot).
+- **Optional online voice, for comparison only.** Off unless a parent turns
+  on **Parent: online voice comparison** in the Voice panel. It uses
+  Microsoft's free neural voices through `edge-tts`
+  (`pip install -r requirements-cloud.txt`); the default is
+  `en-GB-MaisieNeural`, a young British girl's voice. Only the words
+  AlfieBot says are sent, never anything Alfie says or any microphone
+  audio. It's only used in **Try it**: AlfieBot itself always speaks
+  offline. It needs the internet and the free service could change or stop.
+
+**Which voice model?** Piper has no British child's voice, so Bubbly Bot is
+built on `en_GB-cori-medium` (bright, clear, friendly, and already
+installed), with the livelier pacing, expressiveness and gentle pitch lift
+on top. It runs well on the Raspberry Pi 5. Worth comparing in the Voice
+panel: `en_GB-jenny_dioco-medium` (warm southern English) and
+`en_GB-southern_english_female-low` (lighter, lower quality). Download them
+with `python tools/download_voice.py <name>`. The online Maisie voice shows
+what a genuinely young voice sounds like next to them.
+
+New settings: `speech.personality` (`bubbly` or `classic`), `speech.pitch`,
+`speech.allow_cloud_voices`, `speech.cloud_voice`, and a `sounds` section.
+
+## What version 0.6 added: a better voice
 
 - **Piper voices** (offline, natural-sounding, British English) are now
   the preferred voice. `pip install -r requirements.txt` installs Piper, and
@@ -344,6 +395,25 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Delete local data | Click twice to delete the `data/` folder (spelling lists and progress) |
 | Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
 
+## What to test in version 0.7
+
+1. `python tools/check_speech.py --no-mic --profiles`: you should hear the
+   Classic profiles, then the four Bubbly Bot profiles, then "because"
+   spelled with the Classic teacher and the Clear Spelling Teacher.
+2. In the simulator click **Voice**, then **Try it**. Click **Compare
+   both**, then each example. Does Bubbly Bot sound cheerful, clear and a
+   little younger, without being squeaky? Try **Letters: friend**: the
+   letters should be slow and clear.
+3. On **Settings**, try Pitch +/-, Speed and Volume, and the sound effect
+   buttons. If Bubbly Bot sounds too high, take the pitch down a step or two.
+4. Talk to AlfieBot as Bubbly Bot: a chirp when it wakes, a blip when it
+   listens, sparkles and sometimes "Woohoo!" when celebrating. Do a spelling
+   practice: words and letters should use the Clear Spelling Teacher.
+5. Switch to **Classic**: it should sound and behave exactly as v0.6.
+6. Optional: `pip install -r requirements-cloud.txt`, turn on **Parent:
+   online voice comparison**, and play examples with **Online voice**.
+7. Try other Piper voices with Bubbly Bot (see "Which voice model?").
+
 ## What to test in version 0.6
 
 1. Run `python tools/download_voice.py`, then
@@ -456,6 +526,7 @@ software/
   tools/check_speech.py    tests the voice and microphone on their own
   tools/letter_test.py     letter recognition test and report
   tools/download_voice.py  downloads a Piper voice (British English)
+  requirements-cloud.txt   optional: online comparison voice (edge-tts)
   tests/                   automated tests (pytest)
   alfiebot/
     main.py                entry point and command-line options
@@ -464,7 +535,9 @@ software/
     face/                  poses (numbers per expression), engine (animation), renderer (pygame)
     speech/                base.py (interfaces), tts.py (engine choice and fallback,
                            Windows voice, espeak-ng), piper_tts.py (Piper voices),
-                           voice_profiles.py (normal, excited, teacher, sleepy),
+                           voice_profiles.py (profiles; Classic and Bubbly Bot personalities),
+                           sounds.py (wake, listen, celebrate effects),
+                           cloud_tts.py (optional online comparison voice),
                            vosk_recognizer.py (offline mic), text.py (letters for speech),
                            mic_gate.py keeps the mic deaf while AlfieBot talks,
                            letter_test.py (letter recognition test and report)

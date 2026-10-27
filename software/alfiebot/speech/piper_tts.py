@@ -71,7 +71,7 @@ class PiperTTS(SegmentedTTS):
         self.voice = piper.PiperVoice.load(str(model_path))
         self.voice_name = model_path.stem
         self.sample_rate = int(self.voice.config.sample_rate)
-        self.volume = max(0, min(100, volume)) / 100
+        self.volume = max(0, min(100, volume))
         self.device = device if device not in ("", None) else None
         self._letters: Dict[tuple, bytes] = {}
         self._stream = None
@@ -79,11 +79,20 @@ class PiperTTS(SegmentedTTS):
 
     # ---- making audio ------------------------------------------------------
     def synthesize(self, text: str, profile) -> bytes:
-        """16-bit mono audio for ``text`` at the profile's speed and volume."""
-        length = 1.0 / self.rate(profile)
+        """16-bit mono audio for ``text`` at the profile's speed, pitch and volume.
+
+        Pitch: the speech is made slower by the pitch factor, then played
+        back that much faster (resampled). The timing ends up as asked and the
+        voice is higher, without the "fast-forward" effect of speeding up."""
+        factor = 2 ** (self.pitch(profile) / 12)
+        length = factor / self.rate(profile)
+        audio = self._synthesize(text, profile, length)
+        return audio if abs(factor - 1) < 1e-3 else resample(audio, factor)
+
+    def _synthesize(self, text: str, profile, length: float) -> bytes:
         noise = NOISE_SCALE * profile.expressiveness
         noise_w = NOISE_W * profile.expressiveness
-        volume = self.volume * profile.volume
+        volume = self.volume / 100 * profile.volume
         config_cls = getattr(self._piper, "SynthesisConfig", None)
         if config_cls is not None:  # piper-tts 1.3 and later
             syn = config_cls(length_scale=length, noise_scale=noise, noise_w_scale=noise_w,
@@ -124,7 +133,8 @@ class PiperTTS(SegmentedTTS):
         self._write(self.synthesize(text, profile), cancel)
 
     def _say_letter(self, letter, profile, cancel) -> None:
-        key = (letter, self.rate(profile), profile.volume, profile.expressiveness)
+        key = (letter, self.rate(profile), self.pitch(profile), self.volume, profile.volume,
+               profile.expressiveness)
         if key not in self._letters:
             self._letters[key] = _trim(self.synthesize(letter_sound(letter), profile))
         self._write(self._letters[key], cancel)
@@ -134,6 +144,20 @@ class PiperTTS(SegmentedTTS):
 
     def available_voices(self) -> List[str]:
         return installed_voices()
+
+
+def resample(raw: bytes, factor: float) -> bytes:
+    """Squeeze 16-bit audio to 1/factor of its length (raises the pitch by factor)."""
+    try:
+        import numpy as np
+    except ImportError:
+        return raw
+    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+    if len(samples) < 2:
+        return raw
+    count = max(1, int(len(samples) / factor))
+    positions = np.linspace(0, len(samples) - 1, count)
+    return np.interp(positions, np.arange(len(samples)), samples).astype(np.int16).tobytes()
 
 
 def _scale(raw: bytes, volume: float) -> bytes:

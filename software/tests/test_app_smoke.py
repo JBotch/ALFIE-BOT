@@ -46,4 +46,9 @@ def test_letter_test_panel_and_spoken_letters_draw():
     app.voice._set_profile("teacher")
     app.run(max_frames=3)
     assert robot.voice_profile == "teacher"
+    app.voice._set_personality("bubbly")
+    app.voice.tab = "try"
+    app.voice.play_example("Hello!", "normal", "wake")
+    app.run(max_frames=3)
+    assert robot.personality == "bubbly" and robot.voice_profile == "auto"
     pygame.quit()

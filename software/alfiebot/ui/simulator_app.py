@@ -239,6 +239,7 @@ class SimulatorApp:
                     self._handle(event)
             self.robot.update(dt)
             self.letter_test.update(dt)
+            self.voice.update(dt)
             self.face.update(dt)
             if self.face_fullscreen:
                 self.face.draw(self.screen)

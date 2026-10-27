@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 
 from alfiebot.speech.base import SpeechRecognizer, TextToSpeech, WakeWordDetector
 from alfiebot.speech.null import NoSpeechRecognizer, NoWakeWordDetector, TranscriptOnlyTTS
+from alfiebot.speech.sounds import NoSounds, SoundEffects
 
 
 class InteractionButton(ABC):
@@ -34,6 +35,7 @@ class Platform:
     recognizer: SpeechRecognizer = field(default_factory=NoSpeechRecognizer)
     tts: TextToSpeech = field(default_factory=TranscriptOnlyTTS)
     wake_word: WakeWordDetector = field(default_factory=NoWakeWordDetector)
+    sounds: SoundEffects = field(default_factory=NoSounds)
 
     def close(self) -> None:
         self.button.close()

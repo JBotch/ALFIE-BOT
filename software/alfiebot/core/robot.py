@@ -21,6 +21,7 @@ can't hear its own voice.
 """
 
 import logging
+import random
 from typing import Callable, List, Optional, Tuple
 
 from alfiebot.conversation.engine import ConversationEngine, Reply
@@ -34,7 +35,8 @@ from alfiebot.spelling.lists import SpellingLists
 from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.tutor import CHOICES, SpellingTutor
 from alfiebot.spelling.letter_input import heard_letters, letter_grammar
-from alfiebot.speech.voice_profiles import profile_for_reply
+from alfiebot.speech.sounds import personality_sounds
+from alfiebot.speech.voice_profiles import get_personality, profile_for_reply
 from alfiebot.storage.json_store import JsonStore
 
 log = logging.getLogger(__name__)
@@ -68,7 +70,11 @@ class AlfieBot:
         self.mic_mode = speech.get("mic_mode", "open")
         # "auto" picks a voice profile for each reply; or a fixed profile name.
         self.voice_profile = speech.get("voice_profile", "auto") or "auto"
+        # Classic or Bubbly Bot: which profiles "auto" uses, cheers, sound effects.
+        self.personality = speech.get("personality", "classic") or "classic"
         self.last_profile = "normal"
+        self._rng = random.Random()
+        self._last_cheer = ""
         # The panel's microphone switch; it only works if a parent allowed the mic.
         self.mic_switch = True
 
@@ -127,8 +133,20 @@ class AlfieBot:
         for listener in self._face_listeners:
             listener(self.expression, self.talking)
 
+    @property
+    def sound_effects_on(self) -> bool:
+        return personality_sounds(self.personality, self.config)
+
+    def play_sound(self, name: str) -> None:
+        if self.sound_effects_on:
+            self.platform.sounds.play(name)
+
     def _on_state_change(self, old: RobotState, new: RobotState) -> None:
         self.mic_gate.set_speaking(new in TALKING_STATES)
+        if new == RobotState.CELEBRATING:
+            self.play_sound("celebrate")
+        elif new in LISTENING_STATES and old not in LISTENING_STATES and self.running:
+            self.play_sound("listen")
         if new in LISTENING_STATES:
             self.listen_time_left = self.listen_timeout
         if new in ASLEEP_STATES:
@@ -238,6 +256,7 @@ class AlfieBot:
     def _wake(self, rest: str, by_button: bool = False, source: str = "typed",
               confidence: float = 1.0) -> None:
         log.info("Wake %s", "button pressed" if by_button else "phrase heard (typed)")
+        self.play_sound("wake")
 
         def respond():
             if rest:
@@ -296,6 +315,7 @@ class AlfieBot:
         return reply
 
     def _say(self, reply: Reply) -> None:
+        reply = self._add_cheer(reply)
         self._current_reply = reply
         self._speaking_mood = reply.mood
         self.transcript.add("robot", reply.text)
@@ -305,9 +325,22 @@ class AlfieBot:
         self.platform.tts.speak(reply.text, self.last_profile)
 
     def profile_for(self, reply: Reply) -> str:
+        """The voice profile for a reply: fixed in the panel, or chosen by the
+        personality from the kind of reply (normal, excited, teacher, sleepy)."""
         if self.voice_profile != "auto":
             return self.voice_profile
-        return profile_for_reply(reply, self.tutor.mode)
+        role = profile_for_reply(reply, self.tutor.mode)
+        return get_personality(self.personality).roles.get(role, role)
+
+    def _add_cheer(self, reply: Reply) -> Reply:
+        """Bubbly Bot sometimes starts a celebration with "Woohoo!" or "Yay!"."""
+        cheers = [c for c in get_personality(self.personality).cheers if c != self._last_cheer]
+        if (self.voice_profile == "auto" and cheers and reply.celebrate
+                and profile_for_reply(reply, self.tutor.mode) == "excited" and self._rng.random() < 0.6):
+            self._last_cheer = self._rng.choice(cheers)
+            return Reply(f"{self._last_cheer} {reply.text}", reply.intent, reply.mood, reply.then,
+                         reply.detail, reply.celebrate)
+        return reply
 
     def _finish_speaking(self, force_listen: bool = False) -> None:
         reply = self._current_reply

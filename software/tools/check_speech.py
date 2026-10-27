@@ -3,7 +3,7 @@
     python tools/check_speech.py          speak a sentence, list microphones,
                                           then listen for 5 seconds
     python tools/check_speech.py --no-mic  speech output only
-    python tools/check_speech.py --no-mic --profiles   hear the four voice profiles
+    python tools/check_speech.py --no-mic --profiles   hear the Classic and Bubbly Bot voice profiles
 
 It never saves any audio.
 """
@@ -23,7 +23,7 @@ from alfiebot.speech.tts import wait_until_quiet  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--no-mic", action="store_true")
-    parser.add_argument("--profiles", action="store_true", help="also try the four voice profiles")
+    parser.add_argument("--profiles", action="store_true", help="also try the Classic and Bubbly Bot voice profiles")
     parser.add_argument("--seconds", type=float, default=5.0)
     args = parser.parse_args()
     config = load_config()
@@ -40,15 +40,20 @@ def main() -> int:
         for profile, line in (("normal", "This is my normal voice."),
                               ("excited", "This is my excited voice. Brilliant spelling!"),
                               ("teacher", "This is my teacher voice. Spell because."),
-                              ("sleepy", "This is my sleepy voice. Night night.")):
+                              ("sleepy", "This is my sleepy voice. Night night."),
+                              ("bubbly_conversation", "Hiya! I'm Bubbly Bot. Shall we have some fun?"),
+                              ("bubbly_excited", "Woohoo! You did it! Brilliant spelling!"),
+                              ("clear_spelling_teacher", "Let's spell because. Listen carefully."),
+                              ("bubbly_sleepy", "Ooh, I'm getting sleepy. Night night!")):
             print(f"  Profile: {profile}")
             tts.speak(line, profile)
             time.sleep(0.3)
             wait_until_quiet(tts)
-        print("  Letters, teacher profile, twice:")
-        tts.speak_letters("because", "teacher", repeat=2)
-        time.sleep(0.3)
-        wait_until_quiet(tts)
+        for profile in ("teacher", "clear_spelling_teacher"):
+            print(f"  Letters, {profile} profile, twice:")
+            tts.speak_letters("because", profile, repeat=2)
+            time.sleep(0.3)
+            wait_until_quiet(tts)
     if hasattr(tts, "close"):
         tts.close()
 

@@ -59,7 +59,9 @@ def create_pi_platform(config) -> Platform:
         log.warning("GPIO button unavailable (%s); using space bar instead", exc)
         button = SimulatedButton()
     from alfiebot.speech.factory import create_recognizer, create_tts
+    from alfiebot.speech.sounds import create_sounds
 
     return Platform(name="raspberry_pi", button=button,
                     fullscreen_face=config["display"]["fullscreen_on_pi"],
-                    recognizer=create_recognizer(config), tts=create_tts(config))
+                    recognizer=create_recognizer(config), tts=create_tts(config),
+                    sounds=create_sounds(config))

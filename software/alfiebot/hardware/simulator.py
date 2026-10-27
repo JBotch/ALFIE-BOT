@@ -41,6 +41,9 @@ def create_simulator_platform(config, speech: bool = True) -> Platform:
     if speech:
         from alfiebot.speech.factory import create_recognizer, create_tts
 
+        from alfiebot.speech.sounds import create_sounds
+
         platform.tts = create_tts(config)
         platform.recognizer = create_recognizer(config)
+        platform.sounds = create_sounds(config)
     return platform

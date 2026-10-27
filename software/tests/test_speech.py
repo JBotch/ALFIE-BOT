@@ -1,4 +1,5 @@
 import json
+import re
 import os
 import stat
 import sys
@@ -79,7 +80,10 @@ def test_windows_voice_protocol(tmp_path):
     lines = log_file.read_text().split("\n")
     assert lines[:1] == ["Hello there"]
     assert "#RATE -2" in lines and "#VOLUME 63" in lines  # sleepy: slower and quieter
-    assert lines[-5:-1] == ["Spell it.", "C", "ay", "T"]
+    # Sleepy is a little lower: each line goes as SSML with a pitch change.
+    said = [re.sub(r"<[^>]+>", "", line) for line in lines[-5:-1]]
+    assert said == ["#SSML Spell it.", "#SSML C", "#SSML ay", "#SSML T"]
+    assert "pitch='-8%'" in lines[-2]
     tts.speak("Interrupt me. Please do.")
     tts.stop()
     assert not tts.speaking

@@ -32,7 +32,7 @@
     "wake_delay": 0.9
   },
   "speech": {
-    "_comment": "tts_engine: auto (Piper if a Piper voice is installed, otherwise the Windows voice on Windows or espeak-ng on the Pi), piper, windows, espeak or none. piper_voice: the Piper voice in models/piper (get one with tools/download_voice.py). voice: part of a Windows voice name (e.g. Hazel or George) or an espeak voice (e.g. en-gb). rate: -10 (slow) to 10 (fast), Windows and espeak only. volume: 0-100. speed: overall speed for every voice and profile (1.0 normal, 0.8 slower, 1.2 faster). voice_profile: auto (AlfieBot picks normal, excited, teacher or sleepy) or one of those names to always use it. speaker_device: blank for the default speaker (Piper only). recognizer: vosk or none. mic_mode: open (listens whenever AlfieBot is listening) or push_to_talk (only while the button is held). mic_device: blank for the default microphone, or part of its name. min_confidence: spoken letters below this are checked with the child.",
+    "_comment": "tts_engine: auto (Piper if a Piper voice is installed, otherwise the Windows voice on Windows or espeak-ng on the Pi), piper, windows, espeak or none. piper_voice: the Piper voice in models/piper (get one with tools/download_voice.py). voice: part of a Windows voice name (e.g. Hazel or George) or an espeak voice (e.g. en-gb). rate: -10 (slow) to 10 (fast), Windows and espeak only. volume: 0-100. speed: overall speed for every voice and profile (1.0 normal, 0.8 slower, 1.2 faster). personality: bubbly (Bubbly Bot: cheerful, a little higher, sound effects) or classic (the v0.6 voice). voice_profile: auto (the personality picks a profile for each reply) or a profile name to always use it. pitch: semitones up (+) or down (-) for every profile (Piper and espeak-ng; Windows voices only if they support it). speaker_device: blank for the default speaker (Piper only). recognizer: vosk or none. mic_mode: open (listens whenever AlfieBot is listening) or push_to_talk (only while the button is held). mic_device: blank for the default microphone, or part of its name. min_confidence: spoken letters below this are checked with the child. allow_cloud_voices: parent setting, false by default. True lets the Voice panel compare with a Microsoft online voice (pip install edge-tts); only AlfieBot's own words are sent, never anything Alfie says. cloud_voice: e.g. en-GB-MaisieNeural (a child's voice) or en-GB-SoniaNeural.",
     "tts_engine": "auto",
     "piper_voice": "en_GB-cori-medium",
     "voice": "",
@@ -40,16 +40,23 @@
     "volume": 90,
     "speed": 1.0,
     "voice_profile": "auto",
+    "personality": "bubbly",
+    "pitch": 0.0,
     "speaker_device": "",
     "recognizer": "vosk",
     "vosk_model": "models/vosk-model-small-en-us-0.15",
     "mic_mode": "open",
     "mic_device": "",
-    "min_confidence": 0.75
+    "min_confidence": 0.75,
+    "allow_cloud_voices": false,
+    "cloud_voice": "en-GB-MaisieNeural"
   },
   "voice_profiles": {
-    "_comment": "Change how each profile sounds. rate: speed (1.0 normal, 0.8 slower). volume: 0-1. pitch: -50 to 50 (espeak-ng only). sentence_pause, word_pause, letter_pause: seconds. expressiveness: Piper only, 1.0 normal. Leave a profile out to use the built-in settings, e.g. \"teacher\": {\"letter_pause\": 0.9}.",
-    "teacher": {"rate": 0.88, "letter_pause": 0.7}
+    "_comment": "Change how each profile sounds. rate: speed (1.0 normal, 0.8 slower). volume: 0-1. pitch: semitones (+2 = a little higher). sentence_pause, word_pause, letter_pause: seconds. expressiveness: Piper only, 1.0 normal. Leave a profile out to use the built-in settings, e.g. \"teacher\": {\"letter_pause\": 0.9}. Bubbly Bot's profiles are bubbly_conversation, bubbly_excited, clear_spelling_teacher and bubbly_sleepy.",
+    "teacher": {
+      "rate": 0.88,
+      "letter_pause": 0.7
+    }
   },
   "spelling": {
     "_comment": "How spoken spellings are checked. confirm_spoken_answers: always (AlfieBot reads the letters back for a yes before marking) or when_unsure (only when a letter was unclear). phonetic_words: child (B for ball), nato (B for bravo) or off, used when AlfieBot asks about an unclear letter. finish_after_pause: seconds of quiet after some letters before AlfieBot checks them (0 = wait for 'finished').",
@@ -65,5 +72,14 @@
     "microphone_enabled": false,
     "keep_audio_recordings": false
   },
-  "data_dir": "data"
+  "data_dir": "data",
+  "sounds": {
+    "_comment": "Short electronic sound effects (made by the code, no files). bubbly / classic: use them with that personality. wake, listen, celebrate: each effect on or off. volume: 0-1.",
+    "bubbly": true,
+    "classic": false,
+    "wake": true,
+    "listen": true,
+    "celebrate": true,
+    "volume": 0.5
+  }
 }

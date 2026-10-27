@@ -55,7 +55,7 @@ def test_sentences_get_the_profile_pause_and_word_pauses_are_optional():
 
 # ---- profiles --------------------------------------------------------------------
 def test_four_profiles_and_config_overrides():
-    assert set(DEFAULT_PROFILES) == {"normal", "excited", "teacher", "sleepy"}
+    assert {"normal", "excited", "teacher", "sleepy"} <= set(DEFAULT_PROFILES)
     assert DEFAULT_PROFILES["teacher"].rate < 1 < DEFAULT_PROFILES["excited"].rate
     assert DEFAULT_PROFILES["sleepy"].volume < 1
     profiles = load_profiles({"voice_profiles": {"teacher": {"letter_pause": 0.9, "bogus": 1},
@@ -88,7 +88,7 @@ def run(robot, seconds=3.0):
 
 
 def test_robot_switches_profiles():
-    robot, tts = make_robot()
+    robot, tts = make_robot(personality="classic")
     robot.start()
     robot.handle_text("Hey AlfieBot")
     run(robot)

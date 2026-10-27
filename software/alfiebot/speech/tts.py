@@ -16,6 +16,7 @@ saying why in the debug log and in ``fallback_reason``.
 """
 
 import base64
+from xml.sax.saxutils import escape
 import logging
 import math
 import re
@@ -48,6 +49,8 @@ class SegmentedTTS(TextToSpeech):
     def __init__(self, profiles: Dict[str, VoiceProfile] = None, speed: float = 1.0):
         self.profiles = dict(profiles or DEFAULT_PROFILES)
         self.speed = speed  # overall speed, on top of each profile's rate
+        self.pitch_offset = 0.0  # semitones, on top of each profile's pitch
+        self.volume = 90  # 0..100, on top of each profile's volume
         self.spoken: List[str] = []
         self.profiles_used: List[str] = []
         self._thread: Optional[threading.Thread] = None
@@ -58,6 +61,10 @@ class SegmentedTTS(TextToSpeech):
 
     def rate(self, profile: VoiceProfile) -> float:
         return max(0.3, min(3.0, profile.rate * self.speed))
+
+    def pitch(self, profile: VoiceProfile) -> float:
+        """Semitones up (or down) for this profile, kept within a sensible range."""
+        return max(-6.0, min(6.0, profile.pitch + self.pitch_offset))
 
     def speak(self, text: str, profile: Optional[str] = None) -> None:
         p = self.profile(profile)
@@ -158,7 +165,7 @@ class EspeakTTS(SegmentedTTS):
         profile = profile or self.profile("normal")
         wpm = int(self.words_per_minute * self.rate(profile))
         amplitude = int(self.volume * profile.volume * 1.5)  # espeak's 0..200 scale
-        pitch = max(0, min(99, 50 + profile.pitch))
+        pitch = int(max(0, min(99, 50 + 6 * self.pitch(profile))))  # espeak: about 6 per semitone
         return [self.command, "-v", self.voice, "-s", str(wpm), "-a", str(amplitude),
                 "-p", str(pitch), "--stdin"]
 
@@ -211,6 +218,7 @@ if ($want) {
 while ($null -ne ($line = [Console]::In.ReadLine())) {
   if ($line.StartsWith('#RATE ')) { $s.Rate = [int]$line.Substring(6) }
   elseif ($line.StartsWith('#VOLUME ')) { $s.Volume = [int]$line.Substring(8) }
+  elseif ($line.StartsWith('#SSML ')) { $s.SpeakSsml($line.Substring(6)) }
   elseif ($line -eq '#VOICES') {
     foreach ($v in $s.GetInstalledVoices()) { [Console]::Out.WriteLine('VOICE ' + $v.VoiceInfo.Name) }
   }
@@ -309,6 +317,12 @@ class WindowsTTS(SegmentedTTS):
 
     def _say(self, text, profile, cancel) -> None:
         line = for_speech(text).replace("\r", " ").replace("\n", " ").lstrip("#")
+        semitones = self.pitch(profile)
+        if abs(semitones) >= 0.25:
+            # Pitch needs SSML; voices that can't change pitch just ignore it.
+            percent = round((2 ** (semitones / 12) - 1) * 100)
+            line = ("#SSML <speak version='1.0' xmlns='http://www.w3.org/2001/10/synthesis' "
+                    f"xml:lang='en-GB'><prosody pitch='{percent:+d}%'>{escape(line)}</prosody></speak>")
         self._send(line, cancel)
 
     def _interrupt(self) -> None:
@@ -342,6 +356,8 @@ def engine_order(choice: str) -> List[str]:
         return ["piper", native]
     if choice == "piper":
         return ["piper", native]
+    if choice == "cloud":
+        return ["cloud", "piper", native]  # online voices are never relied on
     if choice in ENGINES:
         return [choice]
     log.warning("Unknown tts_engine %r; using auto", choice)
@@ -359,6 +375,13 @@ def _build(engine: str, config: dict) -> TextToSpeech:
 
         return PiperTTS(piper_model_path(config), volume=speech.get("volume", 90),
                         profiles=profiles, speed=speed, device=speech.get("speaker_device"))
+    if engine == "cloud":
+        if not speech.get("allow_cloud_voices"):
+            raise RuntimeError("cloud voices are off (parent setting speech.allow_cloud_voices)")
+        from alfiebot.speech.cloud_tts import CloudTTS
+
+        return CloudTTS(speech.get("cloud_voice") or "en-GB-MaisieNeural", volume=speech.get("volume", 90),
+                        profiles=profiles, speed=speed)
     if engine == "windows":
         return WindowsTTS(voice=speech.get("voice", ""), **common)
     if engine == "espeak":
@@ -380,6 +403,7 @@ def create_tts(config: dict) -> TextToSpeech:
             log.info("Speech engine %s not used: %s", engine, exc)
             continue
         tts.fallback_reason = "; ".join(reasons)
+        tts.pitch_offset = float(speech.get("pitch", 0.0) or 0.0)
         if reasons:
             log.warning("Using %s for speech (%s)", tts.name, tts.fallback_reason)
         return tts
