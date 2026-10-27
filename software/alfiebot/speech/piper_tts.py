@@ -14,8 +14,9 @@ gives a little more or less variation in rhythm and tone.
 """
 
 import logging
+import math
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 from alfiebot.config import SOFTWARE_ROOT
 from alfiebot.speech.text import letter_sound
@@ -75,6 +76,7 @@ class PiperTTS(SegmentedTTS):
         self.device = device if device not in ("", None) else None
         self._letters: Dict[tuple, bytes] = {}
         self._stream = None
+        self._level = 0.0
         log.info("Piper voice loaded: %s", self.voice_name)
 
     # ---- making audio ------------------------------------------------------
@@ -124,10 +126,19 @@ class PiperTTS(SegmentedTTS):
 
     def _write(self, data: bytes, cancel) -> None:
         step = int(self.sample_rate * BLOCK_SECONDS) * 2
-        for i in range(0, len(data), step):
-            if cancel.is_set() or self._stream is None:
-                return
-            self._stream.write(data[i:i + step])
+        try:
+            for i in range(0, len(data), step):
+                if cancel.is_set() or self._stream is None:
+                    return
+                block = data[i:i + step]
+                self._level = _loudness(block)  # the mouth follows the voice
+                self._stream.write(block)
+        finally:
+            self._level = 0.0
+
+    @property
+    def level(self) -> Optional[float]:
+        return self._level if self.speaking else 0.0
 
     def _say(self, text, profile, cancel) -> None:
         self._write(self.synthesize(text, profile), cancel)
@@ -144,6 +155,24 @@ class PiperTTS(SegmentedTTS):
 
     def available_voices(self) -> List[str]:
         return installed_voices()
+
+
+def _loudness(raw: bytes) -> float:
+    """0..1 loudness (RMS) of a block of 16-bit audio."""
+    raw = raw[:len(raw) // 2 * 2]
+    if not raw:
+        return 0.0
+    try:
+        import numpy as np
+    except ImportError:
+        from array import array
+
+        samples = array("h", raw)[::4]  # every 4th sample is plenty for a mouth
+        rms = math.sqrt(sum(x * x for x in samples) / len(samples))
+    else:
+        samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32)
+        rms = float(np.sqrt(np.mean(samples * samples)))
+    return min(1.0, rms / 6000.0)
 
 
 def resample(raw: bytes, factor: float) -> bytes:

@@ -20,8 +20,10 @@
     "window_height": 720
   },
   "face": {
+    "_comment": "transition_speed: how fast one expression morphs into the next (6 = about half a second; higher is faster). blink_interval: shortest and longest gap between blinks, in seconds (each gap is random between them).",
     "start_expression": "sleeping",
     "transition_speed": 6.0,
+    "blink_interval": [2.5, 6.0],
     "show_mouth": true
   },
   "conversation": {

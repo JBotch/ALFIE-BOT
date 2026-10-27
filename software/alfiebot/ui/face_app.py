@@ -1,6 +1,6 @@
 """Face only: what runs full screen on the robot's 5-inch display.
 
-Keys: 1-7 expressions, 0 follow the robot state, D demo cycle,
+Keys: 1-9 expressions, 0 follow the robot state, D demo (cycles all 16),
 Space or a tap = the robot's button, F11 full screen, Esc quit.
 """
 
@@ -9,13 +9,13 @@ import logging
 import pygame
 
 from alfiebot.core.robot import AlfieBot
-from alfiebot.core.states import Expression
+from alfiebot.core.states import DESIGN_EXPRESSIONS
 from alfiebot.ui.face_view import FaceView
 
 log = logging.getLogger(__name__)
 
-EXPRESSION_KEYS = {pygame.K_1 + i: e for i, e in enumerate(Expression)}
-DEMO_SECONDS = 4.0
+EXPRESSION_KEYS = {pygame.K_1 + i: e for i, e in enumerate(DESIGN_EXPRESSIONS[:9])}
+DEMO_SECONDS = 3.0
 
 
 class FaceApp:
@@ -46,7 +46,7 @@ class FaceApp:
         self.face = FaceView(self.robot, self.config)
         if self.demo:
             self.robot.start()
-            self.robot.show_expression(list(Expression)[0])
+            self.robot.show_expression(DESIGN_EXPRESSIONS[0])
         clock = pygame.time.Clock()
         frames = 0
         running = True
@@ -67,8 +67,8 @@ class FaceApp:
                 self._demo_t += dt
                 if self._demo_t >= DEMO_SECONDS:
                     self._demo_t = 0.0
-                    self._demo_index = (self._demo_index + 1) % len(Expression)
-                    self.robot.show_expression(list(Expression)[self._demo_index])
+                    self._demo_index = (self._demo_index + 1) % len(DESIGN_EXPRESSIONS)
+                    self.robot.show_expression(DESIGN_EXPRESSIONS[self._demo_index])
             self.robot.update(dt)
             self.face.update(dt)
             self.face.draw(self.screen)

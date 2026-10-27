@@ -539,7 +539,8 @@ class SpellingTutor:
         if not self._missed:
             done = self._pick("test_done_all", total=total)
             self.stop()
-            return self._say_text(f"{lead} {done}", mood=Expression.EXCITED, then="listen",
+            # Every word right: proud heart eyes.
+            return self._say_text(f"{lead} {done}", mood=Expression.LOVE, then="listen",
                                   celebrate=True)
         self.mode = "after_test"
         one = len(self._missed) == 1

@@ -2,7 +2,8 @@
 
 An AI provider is asked for ``{"speech": ..., "expression": ..., "action": ...}``.
 Nothing it returns is ever run as code or a command: ``speech`` is cleaned
-and length-limited, ``expression`` must be one of the face's expressions,
+and length-limited, ``expression`` must be one of the face's expressions
+(an approved name from face/controller.py),
 and ``action`` must be one of the few names in ``ALLOWED_ACTIONS``, each of
 which maps to a fixed behaviour. Anything else is dropped and logged.
 """
@@ -15,6 +16,7 @@ from typing import List, Optional, Tuple
 from alfiebot.conversation.engine import Reply
 from alfiebot.core.events import BrainResponse
 from alfiebot.core.states import Expression
+from alfiebot.face.controller import ai_expression
 
 log = logging.getLogger(__name__)
 
@@ -79,10 +81,11 @@ def parse_response(raw) -> Tuple[BrainResponse, List[str]]:
     expression = Expression.HAPPY
     value = data.get("expression")
     if value is not None:
-        try:
-            expression = Expression(str(value).strip().lower())
-        except ValueError:
-            notes.append(f"unknown expression {value!r} -> happy")
+        approved = ai_expression(str(value))
+        if approved is None:
+            notes.append(f"expression {value!r} is not allowed -> happy")
+        else:
+            expression = approved
 
     action = data.get("action")
     if isinstance(action, str):

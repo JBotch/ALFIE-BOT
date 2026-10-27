@@ -119,6 +119,8 @@ class AlfieBot:
         self._held_text: Optional[tuple] = None
         self._timers: List[Tuple[float, Callable[[], None]]] = []
         self._face_listeners = []
+        # Validated face commands (look, blink...) for the face view to apply.
+        self.face_commands: List = []
         self.state_machine.add_listener(self._on_state_change)
 
     @property
@@ -197,6 +199,19 @@ class AlfieBot:
             self.tts.stop()
         if not self.state_machine.set_state(state):
             self._notify_face()
+
+    def face_command(self, kind: str, value=None, seconds: float = 2.5) -> bool:
+        """Ask the face to look somewhere, blink, etc. (see face/controller.py).
+        Returns False, and does nothing, if the command isn't allowed."""
+        from alfiebot.face.controller import face_command
+
+        try:
+            self.face_commands.append(face_command(kind, value, seconds))
+        except (ValueError, TypeError) as exc:
+            log.warning("Face command refused: %s", exc)
+            return False
+        del self.face_commands[:-20]
+        return True
 
     def show_expression(self, expression) -> None:
         """Developer panel: preview an expression without changing state."""

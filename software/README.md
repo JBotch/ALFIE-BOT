@@ -4,8 +4,9 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.8: AI brain skeleton** (V1 Phase 2: the brain, a pretend AI
-and the developer controls for it; a real local AI model comes in 0.9).
+**Version 0.9: OLED face** (a new face design with 16 animated
+expressions, built on version 0.8's AI brain skeleton; a real local AI
+model comes in 0.10).
 The V1 plan is in [docs/](docs/): the audit of the existing software, the
 architecture and the development plan.
 
@@ -17,13 +18,62 @@ architecture and the development plan.
 > The Piper voice engine was tested with a stand-in voice only, because the
 > test machine couldn't download Piper voices (version 0.6 has since run
 > with the real Piper voice on Windows). The online comparison voice was
-> tested with a stand-in service only. Version 0.8's AI is a pretend
+> tested with a stand-in service only. The AI is still a pretend
 > (mock) AI that runs inside the program; no real AI model or online AI
 > service is used yet.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
-> (GPIO button) is written but untested.
+> (GPIO button) is written but untested, and the face's frame rate on the Pi
+> hasn't been measured.
 
-## What version 0.8 adds: the AI brain skeleton
+## What version 0.9 adds: the OLED face
+
+- **A new face**, following the reference design: a near-black screen,
+  two cyan rounded-square eyes with a soft glow and a small mouth. It's
+  drawn from numbers (no image files), so it fits any screen size and
+  every change of expression is a smooth morph.
+- **16 expressions:** Neutral, Happy, Curious, Sleepy, Surprised, Looking
+  Left, Looking Right, Looking Around, Thinking, Confused, Sad, Angry,
+  Love / Proud, Wink, Processing and Sleeping. Listening (wider eyes) and
+  Excited (celebrating) are kept for the robot's own states.
+- **It feels alive:** natural blinking at random times (sometimes a double
+  blink), both eyes moving together, small glances and the odd curious look
+  while idle, a gentle bounce when happy, a slow pulse while listening,
+  and floating ZZZ while asleep, waking up with a smooth transition.
+- **The mouth talks.** With the Piper voice, the mouth opens with the
+  loudness of what AlfieBot is saying; with other voices it uses a timed
+  animation. It settles back smoothly when AlfieBot stops.
+- **Face test panel** (developer only): click **Face test...** in the
+  panel. It opens under the robot screen, so the face stays in view: a
+  button for every expression, blink and double blink, look left, right,
+  up, down and around, a mouth test, animation speed (x0.25 to x2), reset
+  to neutral, and **Demo all 16**, which cycles through every expression.
+  The robot's screen itself only ever shows the face.
+- **One way in for the AI.** `alfiebot/face/controller.py` lists what an
+  AI reply (or any other code) may ask the face to do: an approved
+  expression, look somewhere, look around or blink. Anything else is
+  refused and logged. The AI can't ask for Angry, Sleeping, Sleepy or
+  Processing, and can't draw anything of its own.
+- **Keys 1-9** preview the first nine expressions, in the simulator and
+  face-only mode. `run_face.py --demo` (or D) cycles all 16.
+- New setting `face.blink_interval` (seconds between blinks, default
+  2.5 to 6). `tools/render_expressions.py` also saves an expression sheet.
+
+### What the face shows when
+
+| AlfieBot is... | The face |
+|---|---|
+| Asleep | Sleeping: closed eyes, a small "o" mouth, floating ZZZ |
+| Idle | Neutral, with blinks and small glances |
+| Listening | Listening: wider eyes, small mouth, a slow glow pulse |
+| Thinking (waiting for the AI) | Thinking: eyes up to the side, one eyebrow raised |
+| Speaking | The mood of the reply, with the mouth moving |
+| Pleased (a correct answer, finishing a test) | Happy, or Love / Proud at the end of a test |
+| Asking a question | Curious |
+| Unsure (didn't understand) | Confused |
+| Celebrating | Excited |
+| Something went wrong | Confused (never angry at a child) |
+
+## What version 0.8 added: the AI brain skeleton
 
 - **No more letters on the robot's face.** While Alfie spells, the robot's
   screen shows only the eyes. The letters AlfieBot heard (with a `?` after
@@ -423,7 +473,7 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 |---|---|---|
 | Panel | Start / Stop | Wake the robot (IDLE) / put it to sleep. Typed input is ignored while stopped |
 | Panel | Set state | Any of the ten states; the face follows |
-| Panel or keys 1-7 | Preview expression | Show one expression; 0 or "Follow state" goes back to the state's face |
+| Panel or keys 1-9 | Preview expression | Show one expression; 0 or "Follow state" goes back to the state's face |
 | Panel or Space | Robot button | Wakes AlfieBot, interrupts it to listen, or keeps it listening. In "hold button" mode, hold it while you talk |
 | Panel | Mic: on/off, Mode | Switch the microphone off for now; open mic or hold-to-talk |
 | Panel | Allow mic | Parent setting: the microphone can't open until this says yes |
@@ -433,10 +483,35 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Letter test | Letter recognition test and report |
 | Panel | Voice | Choose the voice, voice profile and speed; test them |
 | Panel | As: typing/speech, Conf: high/low | Send simulated speech as typing (marked at once) or as speech (letters build up), sure or unsure |
+| Panel | Face test... | Every expression, blink, look, mouth test, speed, reset, demo of all 16 |
 | Panel | AI brain | AI mode, model, cloud switch, simulated failures, routing and performance |
 | Panel | Speaker: on/off | Mute AlfieBot's voice; replies still show in the transcript |
 | Panel | Reset all data | Click twice to delete the `data/` folder (spelling lists and progress) and clear the transcript and AI statistics |
-| Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
+| Face-only mode | 1-9, 0, D, Space, Esc | Expressions, follow state, demo of all 16, button, quit |
+
+## What to test in version 0.9
+
+1. Start the simulator and press **Start**. The face should look like the
+   reference: cyan rounded-square eyes and a small smile. Watch it for a
+   minute: it blinks at random (sometimes twice), glances about and now and
+   then looks curious.
+2. Click **Face test...** and click through all 16 expressions. Each change
+   should morph smoothly, with no flicker or jump. Check that each one
+   looks right to you and Alfie.
+3. Try **Blink**, **Double blink**, the **Look** buttons and **Look
+   around**. Both eyes should move together.
+4. Turn on **Mouth test**, then off again: the mouth should move and then
+   settle back smoothly. Then type "Tell me a joke": the mouth moves while
+   AlfieBot talks (with Piper, it follows the voice).
+5. Set the speed to **x0.25** to watch transitions in slow motion, then
+   **Reset to neutral**.
+6. Click **Demo all 16** and leave it running for a minute.
+7. Press **Stop**: AlfieBot falls asleep with floating ZZZ. Press **Start**:
+   it wakes up smoothly.
+8. Start a spelling **Test** and spell some letters: spelling and voice work
+   as before, and the robot's face shows no letters.
+9. `python run_face.py --windowed --demo` shows the face alone, cycling
+   all 16 expressions. Press F11 for full screen, Esc to quit.
 
 ## What to test in version 0.8
 
@@ -586,7 +661,7 @@ software/
   run_face.py              face only (for the robot's screen)
   config/alfiebot.json     settings, including the parent/privacy section
   examples/                example weekly spelling list
-  tools/render_expressions.py   saves a PNG of every expression
+  tools/render_expressions.py   saves a PNG of every expression and an expression sheet
   tools/check_speech.py    tests the voice and microphone on their own
   tools/letter_test.py     letter recognition test and report
   tools/download_voice.py  downloads a Piper voice (British English)
@@ -597,7 +672,8 @@ software/
     config.py              loads config/alfiebot.json over built-in defaults
     core/                  robot, brain (who answers), actions (checks AI output),
                            events, state machine, states -> expressions, transcript
-    face/                  poses (numbers per expression), engine (animation), renderer (pygame)
+    face/                  poses (numbers per expression), engine (blinks, glances, mouth, transitions),
+                           renderer (pygame), controller.py (what the AI may ask the face to do)
     speech/                base.py (interfaces), tts.py (engine choice and fallback,
                            Windows voice, espeak-ng), piper_tts.py (Piper voices),
                            voice_profiles.py (profiles; Classic and Bubbly Bot personalities),
@@ -615,7 +691,8 @@ software/
                            progress.py, tutor.py (add / learn / test), responses.json
     hardware/              simulator vs Raspberry Pi (button), auto-detected
     storage/               local JSON files (atomic writes, delete all)
-    ui/                    simulator window, widgets and face-only app
+    ui/                    simulator window, widgets, panels (face test, AI brain, voice,
+                           spelling, letter test) and the face-only app
 ```
 
 The core (`core/`, `face/engine.py`, `speech/`, `storage/`) doesn't import
@@ -626,7 +703,7 @@ that implements the interface in `speech/base.py`.
 ## Privacy
 
 - Everything runs offline. There is no internet chatbot. The AI in
-  version 0.8 is a pretend AI inside the program; the cloud AI switch is
+  version 0.9 is still a pretend AI inside the program; the cloud AI switch is
   off by default, and even when it's on, a child's words are never sent
   (only an adult test session can use it).
 - The microphone is off until a parent allows it (**Allow mic**, saved as

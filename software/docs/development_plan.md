@@ -24,7 +24,21 @@ Goal: the new brain runs inside the existing simulator with the mock AI. The chi
 - [x] Also done early: a first router (`ai/router.py`) with the three modes, the parent cloud switch, an adult test session, simulated internet failure and cloud-to-local fallback, and in-memory performance statistics (`ai/performance.py`). Phase 4 completes the router; Phase 3 stores statistics in SQLite
 - **Demo:** chat with the mock AI in the simulator; the face goes thinking, then speaking; turning on "simulate AI failure" gives a friendly scripted reply.
 
-## Phase 3: Local AI brain (v0.9)
+## OLED face upgrade (v0.9, done)
+
+Added at Jordan's request before the next AI phase, from the "OLED Face Design & Animation Upgrade" brief and its reference image. Later phases move up one version number; Phase 7 is still v1.0.
+
+- [x] New face design: near-black background, cyan rounded-square eyes with a soft glow, a small mouth; drawn from numbers and morphed, no image files
+- [x] 16 expressions from the brief (plus listening and excited, which the robot's states already used)
+- [x] Natural blinking (random, configurable range, sometimes double), eyes that move together, idle glances, smooth transitions, sleeping with floating ZZZ
+- [x] Talking mouth follows the voice's loudness (Piper) or a timed animation (other voices), and settles back smoothly
+- [x] `face/controller.py`: the only things the AI or other code may ask the face to do (approved expressions, look, look around, blink, talk test), validated and queued so nothing blocks speech, listening or spelling
+- [x] Developer **Face test** panel in the simulator (every expression, blink, look, mouth test, speed, reset, demo); keys 1-9 and a demo cycle in face-only mode
+- [x] Tests: all expressions render at three sizes, morphs keep shapes valid, eyes stay inside the face, blinking within limits, mouth during and after speech, AI cannot request angry/sleeping, spelling still works with the panel open
+- **Demo:** `python run_face.py --windowed --demo`, or **Face test** then **Demo all 16** in the simulator.
+- Not done: Raspberry Pi frame rate. On the Linux test machine one face frame takes about 14 ms at 1280x720 and 7 ms at 800x480 (3 ms with `"supersample": 1`); the Pi must be measured on the real hardware.
+
+## Phase 3: Local AI brain (v0.10)
 
 - [ ] `config/personality.json`, `core/personality.py`, `core/memory.py`, `core/safety.py` (first version)
 - [ ] `ai/local_provider.py` for Ollama: detection, model list, chat with JSON schema output, thinking off, timeouts
@@ -35,7 +49,7 @@ Goal: the new brain runs inside the existing simulator with the mock AI. The chi
 - [ ] Tests: personality checks, memory expiry, provider unavailable, malformed model output (using the mock and a fake Ollama server)
 - **Demo:** a typed conversation with a local model on the laptop; benchmark report comparing the three models on laptop hardware.
 
-## Phase 4: Hybrid router (v0.10)
+## Phase 4: Hybrid router (v0.11)
 
 - [ ] `ai/connectivity.py`, `ai/router.py` with the rule order in the proposal
 - [ ] Privacy gate, parent settings `cloud.enabled` and `cloud.child_data_review_complete` (both off), adult test session switch
@@ -46,7 +60,7 @@ Goal: the new brain runs inside the existing simulator with the mock AI. The chi
 
 The real OpenAI API is only called by an adult with their own key, with synthetic prompts, and only after Jordan agrees.
 
-## Phase 5: Learning engine (v0.11)
+## Phase 5: Learning engine (v0.12)
 
 - [ ] SQLite learning schema; one-off import of `data/spellings/*.json` and `data/progress.json` (JSON kept as backup)
 - [ ] `learning/spelling.py` examiner with explicit outcomes (correct, incorrect, unclear, help requested, taught), reusing `spelling/letter_input.py`
@@ -58,7 +72,7 @@ The real OpenAI API is only called by an adult with their own key, with syntheti
 - [ ] Tests: every testing bullet in brief section 11, including restart persistence and switching provider mid-activity
 - **Demo:** a voice-only spelling session where AlfieBot clarifies an unclear letter, gives a clue, teaches a word, and the next day's session brings the tricky words back.
 
-## Phase 6: Voice integration (v0.12)
+## Phase 6: Voice integration (v0.13)
 
 - [ ] Letter-by-letter vs continuous recognition modes; extend the letter test tool to compare them on B/D, M/N, P/T, F/S
 - [ ] Measure on Jordan's PC with adult voices and synthetic Piper audio; report accuracy, clarification rate and time per word

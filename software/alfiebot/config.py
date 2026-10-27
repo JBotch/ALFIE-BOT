@@ -26,6 +26,7 @@ DEFAULTS = {
     "face": {
         "start_expression": "sleeping",
         "transition_speed": 6.0,
+        "blink_interval": [2.5, 6.0],
         "show_mouth": True,
     },
     "conversation": {

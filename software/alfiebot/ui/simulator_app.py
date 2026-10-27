@@ -9,9 +9,10 @@ import pygame
 from alfiebot import __version__
 from alfiebot.config import save_setting
 from alfiebot.core.robot import AlfieBot
-from alfiebot.core.states import Expression, RobotState
+from alfiebot.core.states import DESIGN_EXPRESSIONS, Expression, RobotState
 from alfiebot.ui import widgets as w
 from alfiebot.ui.ai_panel import AIPanel
+from alfiebot.ui.face_test_panel import FaceTestPanel
 from alfiebot.ui.face_view import FaceView
 from alfiebot.ui.letter_test_panel import LetterTestPanel
 from alfiebot.ui.voice_panel import VoicePanel
@@ -20,7 +21,9 @@ from alfiebot.ui.spelling_panel import SpellingPanel
 
 log = logging.getLogger(__name__)
 
-EXPRESSION_KEYS = {pygame.K_1 + i: e for i, e in enumerate(Expression)}
+EXPRESSION_KEYS = {pygame.K_1 + i: e for i, e in enumerate(DESIGN_EXPRESSIONS[:9])}
+PREVIEW_EXPRESSIONS = (Expression.NEUTRAL, Expression.HAPPY, Expression.CURIOUS, Expression.THINKING,
+                       Expression.CONFUSED, Expression.SLEEPING)
 STATE_LABELS = {
     RobotState.SLEEPING: "SLEEPING", RobotState.IDLE: "IDLE",
     RobotState.LISTENING: "LISTENING", RobotState.THINKING: "THINKING",
@@ -93,11 +96,13 @@ class SimulatorApp:
         y = 232
         self.expr_buttons = {}
         bw = (inner - 3 * 6) // 4
-        for i, expr in enumerate(Expression):
+        for i, expr in enumerate(PREVIEW_EXPRESSIONS):
             r, c = divmod(i, 4)
             self.expr_buttons[expr] = add(
-                (px + c * (bw + 6), y + r * 32, bw, 27), f"{i + 1} {expr.value.title()}",
+                (px + c * (bw + 6), y + r * 32, bw, 27), expr.label,
                 (lambda e=expr: self.robot.show_expression(e)), size=16)
+        self.face_test_btn = add((px + 2 * (bw + 6), y + 32, bw, 27), "Face test...",
+                                 self._toggle_face_test, size=16)
         self.follow_btn = add((px + 3 * (bw + 6), y + 32, bw, 27), "0 Follow state",
                               lambda: self.robot.show_expression(None), size=16)
 
@@ -140,6 +145,8 @@ class SimulatorApp:
         self.letter_test = LetterTestPanel(self.robot, (12, 12, self.bezel.width, H - 24))
         self.voice = VoicePanel(self.robot, self.config, (12, 12, self.bezel.width, H - 24))
         self.ai = AIPanel(self.robot, self.config, (12, 12, self.bezel.width, H - 24))
+        # Under the robot screen, so the face stays in view while testing it.
+        self.face_test = FaceTestPanel(self.robot, (12, log_top, self.bezel.width, H - log_top - 12))
         self.ai_btn = add((px + 170, 18, 84, 24), "AI brain", self._toggle_ai, size=15)
         self.speaker_btn = add((px + 260, 18, 96, 24), "Speaker: on",
                                lambda: self.robot.set_voice_output(not self.robot.voice_output), size=15)
@@ -165,6 +172,8 @@ class SimulatorApp:
 
     def _close_overlays(self):
         self.spelling.open = self.voice.open = self.ai.open = False
+        if self.face_test.open:
+            self.face_test.toggle()
         if self.letter_test.open:
             self.letter_test.toggle()
 
@@ -173,18 +182,30 @@ class SimulatorApp:
         self._close_overlays()
         self.ai.open = not was_open
 
+    def _toggle_face_test(self):
+        was_open = self.face_test.open
+        self._close_overlays()
+        if not was_open:
+            self.face_test.toggle()
+
     def _toggle_letter_test(self):
         self.spelling.open = self.voice.open = self.ai.open = False
+        if self.face_test.open:
+            self.face_test.toggle()
         self.letter_test.toggle()
 
     def _toggle_lists(self):
         self.voice.open = self.ai.open = False
+        if self.face_test.open:
+            self.face_test.toggle()
         if self.letter_test.open:
             self.letter_test.toggle()
         self.spelling.toggle("lists")
 
     def _toggle_voice(self):
         self.spelling.open = self.ai.open = False
+        if self.face_test.open:
+            self.face_test.toggle()
         if self.letter_test.open:
             self.letter_test.toggle()
         self.voice.toggle()
@@ -246,6 +267,7 @@ class SimulatorApp:
         self.screen = pygame.display.set_mode(self.window_size)
         pygame.key.stop_text_input()
         self.face = FaceView(self.robot, self.config)
+        self.face_test.face = self.face
         log.info("Simulator ready. Press Start (or the Space bar) to wake %s.", self.robot.name)
         clock = pygame.time.Clock()
         frames = 0
@@ -262,6 +284,7 @@ class SimulatorApp:
             self.robot.update(dt)
             self.letter_test.update(dt)
             self.voice.update(dt)
+            self.face_test.update(dt)
             self.face.update(dt)
             if self.face_fullscreen:
                 self.face.draw(self.screen)
@@ -283,7 +306,8 @@ class SimulatorApp:
         if self.text_input.handle(event):
             self.spelling.input.focused = False
             return
-        if self.letter_test.handle(event) or self.voice.handle(event) or self.ai.handle(event):
+        if (self.face_test.handle(event) or self.letter_test.handle(event) or self.voice.handle(event)
+                or self.ai.handle(event)):
             return
         if self.spelling.handle(event):
             if self.spelling.input.focused and self.text_input.focused:
@@ -328,6 +352,7 @@ class SimulatorApp:
         self.letter_test.draw(s, mouse, dt)
         self.voice.draw(s, mouse, dt)
         self.ai.draw(s, mouse, dt)
+        self.face_test.draw(s, mouse, dt)
 
     def _draw_transcript(self):
         colours = {"user": w.TEXT, "robot": w.ACCENT, "system": w.TEXT_DIM}
@@ -394,10 +419,11 @@ class SimulatorApp:
         w.draw_text(s, "Set state (drives the face)", (px, 120), w.ACCENT, 18)
         for state, b in self.state_buttons.items():
             b.selected = state == robot.state
-        w.draw_text(s, "Preview expression (keys 1-7)", (px, 212), w.ACCENT, 18)
+        w.draw_text(s, "Preview expression (keys 1-9; all 16 in Face test)", (px, 212), w.ACCENT, 18)
         for expr, b in self.expr_buttons.items():
             b.selected = robot.expression_override == expr
         self.follow_btn.selected = robot.expression_override is None
+        self.face_test_btn.selected = self.face_test.open
 
         # Microphone status: always visible so it's clear when it's listening.
         self._section(self.y_mic, "Microphone")
@@ -467,6 +493,6 @@ class SimulatorApp:
 
         for b in self.buttons:
             b.draw(s, mouse)
-        w.draw_text(s, "Space = robot button   T or Enter = type   1-7 faces   F11 full-screen face",
+        w.draw_text(s, "Space = robot button   T or Enter = type   1-9 faces   F11 full-screen face",
                     (px, self.panel.bottom - 22), w.TEXT_DIM, 15, max_width=inner)
 

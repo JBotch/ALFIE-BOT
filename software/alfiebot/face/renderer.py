@@ -1,26 +1,39 @@
-"""Draws the face with pygame.
+"""Draws the OLED-style face with pygame.
 
 Every size is a fraction of the target rectangle, so the same face fits
-the simulator viewport and the Pi's 1280x720 screen. Eyes are drawn at
+the simulator viewport and any screen resolution. Each eye is one polygon
+with a fixed number of points: a rounded square, an arch and a heart are
+all described with the same number of points, so blending the numbers
+morphs one shape smoothly into another. Features are drawn at
 ``supersample`` times their size and scaled down for smooth edges, and a
-blurred copy is added underneath for the cyan glow.
+blurred copy is added underneath for the soft cyan glow. No images, no
+GPU effects.
 """
 
 import math
+from functools import lru_cache
+from typing import List, Tuple
 
 import pygame
 
 from alfiebot.face.engine import FaceFrame
 
-BACKGROUND = (5, 9, 16)
-RIM = (150, 238, 255)
-IRIS_OUTER = (45, 175, 245)
-IRIS_INNER = (20, 105, 210)
-PUPIL = (6, 16, 38)
-PUPIL_RING = (14, 52, 110)
-HIGHLIGHT = (255, 255, 255)
-LINE = (120, 228, 255)
-MOUTH_INSIDE = (10, 40, 75)
+BACKGROUND = (3, 6, 12)
+EYE = (110, 225, 255)
+POINTS = 72  # points per eye outline (the same for every shape, so they morph)
+Point = Tuple[float, float]
+
+# Pixel heart (the "love" eyes), 9 x 8 cells, # = lit.
+HEART = (
+    ".##...##.",
+    "####.####",
+    "#########",
+    "#########",
+    ".#######.",
+    "..#####..",
+    "...###...",
+    "....#....",
+)
 
 
 def _lerp_colour(a, b, t):
@@ -31,24 +44,111 @@ def _clamp(v, lo, hi):
     return lo if v < lo else hi if v > hi else v
 
 
+# ---- shapes: closed outlines, clockwise from the top centre --------------------
+def _resample(points: List[Point], n: int) -> List[Point]:
+    """n points evenly spaced along a closed outline, starting at its first point."""
+    segs = []
+    total = 0.0
+    for i, a in enumerate(points):
+        b = points[(i + 1) % len(points)]
+        d = math.hypot(b[0] - a[0], b[1] - a[1])
+        segs.append((a, b, d))
+        total += d
+    out = []
+    step = total / n
+    target, acc = 0.0, 0.0
+    for a, b, d in segs:
+        while target <= acc + d and len(out) < n:
+            t = 0.0 if d == 0 else (target - acc) / d
+            out.append((a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t))
+            target += step
+        acc += d
+    while len(out) < n:
+        out.append(points[0])
+    return out
+
+
+def rounded_rect(w: float, h: float, r: float, n: int = POINTS) -> List[Point]:
+    r = max(0.0, min(r, w / 2, h / 2))
+    x0, y0 = w / 2 - r, h / 2 - r
+    pts = [(0.0, -h / 2)]
+    corners = ((x0, -y0, -90), (x0, y0, 0), (-x0, y0, 90), (-x0, -y0, 180))
+    for cx, cy, start in corners:
+        for k in range(9):
+            a = math.radians(start + 90 * k / 8)
+            pts.append((cx + r * math.cos(a), cy + r * math.sin(a)))
+    return _resample(pts, n)
+
+
+@lru_cache(maxsize=1)
+def _arch_unit() -> Tuple[Point, ...]:
+    """A happy-eye arch (a thick upside-down U) in a 1 x 1 box."""
+    rx, ry, cy, t = 0.5, 0.78, 0.28, 0.2
+    rxi, ryi = rx - t, ry - t * 1.15
+    pts = []
+    for k in range(17):  # outer: top -> right end
+        a = math.radians(-90 + 90 * k / 16)
+        pts.append((rx * math.cos(a), cy + ry * math.sin(a)))
+    for k in range(33):  # inner: right end -> over the top -> left end
+        a = math.radians(0 - 180 * k / 32)
+        pts.append((rxi * math.cos(a), cy + ryi * math.sin(a)))
+    for k in range(17):  # outer: left end -> top
+        a = math.radians(180 + 90 * k / 16)
+        pts.append((rx * math.cos(a), cy + ry * math.sin(a)))
+    top = cy - ry
+    pts = [(x, y - top - 0.5) for x, y in pts[:-1]]  # top edge at -0.5
+    return tuple(_resample(pts, POINTS))
+
+
+@lru_cache(maxsize=1)
+def _heart_unit() -> Tuple[Point, ...]:
+    """The pixel heart's outline in a 1 x (8/9) box, starting at the top notch."""
+    cells = {(x, y) for y, row in enumerate(HEART) for x, ch in enumerate(row) if ch == "#"}
+    edges = {}
+    for x, y in cells:
+        for a, b, nb in (((x, y), (x + 1, y), (x, y - 1)), ((x + 1, y), (x + 1, y + 1), (x + 1, y)),
+                         ((x + 1, y + 1), (x, y + 1), (x, y + 1)), ((x, y + 1), (x, y), (x - 1, y))):
+            if nb not in cells:
+                edges[a] = b
+    cols, rows = len(HEART[0]), len(HEART)
+    centre = cols / 2
+    start = min((v for v in edges if v[1] > 0 and v[1] < 3), key=lambda v: (abs(v[0] - centre), v[1]))
+    loop = [start]
+    v = edges[start]
+    while v != start:
+        loop.append(v)
+        v = edges[v]
+    scale = 1.0 / cols
+    pts = [((x - centre) * scale, (y - rows / 2) * scale) for x, y in loop]
+    return tuple(_resample(pts, POINTS))
+
+
+def _scaled(unit, w, h) -> List[Point]:
+    return [(x * w, y * h) for x, y in unit]
+
+
+def _rotate(points, degrees: float):
+    if abs(degrees) < 0.01:
+        return points
+    a = math.radians(degrees)
+    c, s = math.cos(a), math.sin(a)
+    return [(x * c - y * s, x * s + y * c) for x, y in points]
+
+
 class FaceRenderer:
     def __init__(self, supersample: int = 2, glow: float = 1.0, show_mouth: bool = True):
         self.ss = max(1, int(supersample))
         self.glow_strength = glow
         self.show_mouth = show_mouth
-        self._fonts = {}
-
-    def _font(self, size: int) -> pygame.font.Font:
-        size = max(8, int(size))
-        if size not in self._fonts:
-            self._fonts[size] = pygame.font.Font(None, size)
-        return self._fonts[size]
+        self._glow = 1.0
+        self.last_eye_boxes: List[pygame.Rect] = []  # for tests: where the eyes were drawn
 
     # ---- whole face ------------------------------------------------------
     def draw(self, target: pygame.Surface, frame: FaceFrame, rect: pygame.Rect = None) -> None:
         rect = pygame.Rect(rect) if rect else target.get_rect()
         W, H = rect.size
         target.fill(BACKGROUND, rect)
+        self.last_eye_boxes = []
         if W < 20 or H < 20:
             return
         p = frame.pose
@@ -56,37 +156,28 @@ class FaceRenderer:
         unit = min(H, W * 9 / 16)
         self._glow = _clamp(p.glow * self.glow_strength, 0.0, 2.0)
         ox, oy = rect.topleft
-
-        cx = W / 2
-        cy = H * 0.44 + (p.y_offset + frame.bob) * H
-        sep = unit * 0.53
-        eye_h = unit * 0.5
-        eye_w = eye_h * 0.8
-        shift_x = p.gaze_x * unit * 0.05
-        shift_y = p.gaze_y * unit * 0.03
-        tilt_dy = p.tilt * unit * 0.04
+        lift = (p.y_offset + frame.bob) * H
+        cx = ox + W / 2
+        eye_cy = oy + H * 0.42 + lift
+        shift_x = p.gaze_x * unit * 0.035
+        shift_y = p.gaze_y * unit * 0.025
 
         clip = target.get_clip()
         target.set_clip(rect)
-        for side, open_, lid, smile, scale in (
-            (-1, p.l_open, p.l_lid, p.l_smile, p.l_scale),
-            (1, p.r_open, p.r_lid, p.r_smile, p.r_scale),
-        ):
-            w = eye_w * scale
-            h = eye_h * scale * frame.breathe
-            eye = self._eye(w, h, side, open_, lid, smile, p.pupil, p.gaze_x, p.gaze_y)
-            ex = ox + cx + side * sep / 2 + shift_x
-            ey = oy + cy + shift_y + side * tilt_dy
-            self._blit_glowing(target, eye, (ex, ey))
-
+        for side, pre in ((-1, "l_"), (1, "r_")):
+            e = {k: getattr(p, pre + k) for k in ("w", "h", "open", "round", "lid", "slope", "arch", "heart",
+                                                    "pupil", "rot", "dy", "brow_rot")}
+            ex = cx + side * unit * 0.31 + shift_x
+            ey = eye_cy + e["dy"] * H + shift_y
+            self._eye(target, unit, side, e, p, frame, (ex, ey))
+            if p.brow > 0.01:
+                self._brow(target, unit, side, e, p, (ex, ey), frame.breathe)
         if self.show_mouth:
-            mouth = self._mouth(unit, p.mouth_curve, p.mouth_width, p.mouth_open)
-            mx = ox + cx + shift_x * 0.6 + p.tilt * unit * 0.015
-            my = oy + H * 0.83 + (p.y_offset + frame.bob) * H + shift_y * 0.5
-            self._blit_glowing(target, mouth, (mx, my))
-
+            mx = cx + shift_x * 0.6
+            my = oy + H * 0.42 + unit * 0.28 + lift + shift_y * 0.4
+            self._mouth(target, unit, p, (mx, my))
         for particle in frame.particles:
-            self._particle(target, particle, rect, unit, frame.time)
+            self._particle(target, particle, rect, unit)
         target.set_clip(clip)
 
     def _blit_glowing(self, target, surf, centre):
@@ -103,151 +194,179 @@ class FaceRenderer:
             small.blit(pygame.transform.smoothscale(surf, (sw, sh)), (pad, pad))
             if hasattr(small, "premul_alpha"):
                 small = small.premul_alpha()  # transparent pixels add nothing
-            level = int(_clamp(200 * self._glow, 0, 255))
+            level = int(_clamp(150 * self._glow, 0, 255))
             small.fill((level, level, level, 255), special_flags=pygame.BLEND_RGBA_MULT)
             big = pygame.transform.smoothscale(small, (w + 2 * pad * k, h + 2 * pad * k))
             target.blit(big, big.get_rect(center=(x, y)), special_flags=pygame.BLEND_RGB_ADD)
         target.blit(surf, surf.get_rect(center=(x, y)))
 
-    # ---- eye -------------------------------------------------------------
-    def _eye(self, w, h, side, openness, lid, smile, pupil, gaze_x, gaze_y):
+    def _canvas(self, w, h):
         ss = self.ss
-        W2 = max(4, int(w * ss))
-        H2 = max(4, int(h * ss))
-        s = pygame.Surface((W2, H2), pygame.SRCALPHA)
-        full = pygame.Rect(0, 0, W2, H2)
+        surf = pygame.Surface((max(4, int(w * ss)), max(4, int(h * ss))), pygame.SRCALPHA)
+        return surf, ss
 
-        pygame.draw.ellipse(s, RIM, full)
-        # Iris: rings from bright edge to deeper blue, nudged toward the gaze.
-        rim = 0.075
-        steps = 7
-        gx = _clamp(gaze_x, -1.2, 1.2)
-        gy = _clamp(gaze_y, -1.2, 1.2)
-        for i in range(steps):
-            t = i / (steps - 1)
-            inset = rim + t * 0.16
-            r = full.inflate(-W2 * inset * 2, -H2 * inset * 2)
-            r.move_ip(gx * W2 * 0.06 * t, gy * H2 * 0.05 * t)
-            pygame.draw.ellipse(s, _lerp_colour(IRIS_OUTER, IRIS_INNER, t), r)
+    def _finish(self, surf, alpha: float = 1.0):
+        if alpha < 0.999:
+            surf.fill((255, 255, 255, int(255 * _clamp(alpha, 0, 1))), special_flags=pygame.BLEND_RGBA_MULT)
+        if self.ss > 1:
+            w, h = surf.get_size()
+            surf = pygame.transform.smoothscale(surf, (max(1, w // self.ss), max(1, h // self.ss)))
+        return surf
 
-        # Pupil follows the gaze furthest.
-        pw = W2 * 0.56 * pupil
-        ph = H2 * 0.58 * pupil
-        pcx = W2 / 2 + gx * W2 * 0.15
-        pcy = H2 / 2 + gy * H2 * 0.13
-        ring = pygame.Rect(0, 0, pw * 1.12, ph * 1.12)
-        ring.center = (pcx, pcy)
-        pygame.draw.ellipse(s, PUPIL_RING, ring)
-        prect = pygame.Rect(0, 0, pw, ph)
-        prect.center = (pcx, pcy)
-        pygame.draw.ellipse(s, PUPIL, prect)
+    # ---- eye -------------------------------------------------------------
+    def eye_outline(self, unit, side, e, breathe=1.0) -> Tuple[List[Point], float, float, float]:
+        """The eye polygon around (0, 0), plus its width, full height and current height."""
+        w = unit * 0.40 * e["w"] * breathe
+        h_full = unit * 0.30 * e["h"] * breathe
+        bar = unit * 0.06
+        h = bar + (h_full - bar) * _clamp(e["open"], 0.0, 1.3)
+        arch = _clamp(e["arch"], 0, 1)
+        heart = _clamp(e["heart"], 0, 1 - arch)
+        rect_w = 1 - arch - heart
+        r = _clamp(e["round"], 0, 0.5) * min(w, h)
+        shapes = [(rect_w, rounded_rect(w, h, r))]
+        if arch > 0.001:
+            shapes.append((arch, _scaled(_arch_unit(), w, h * 0.9)))
+        if heart > 0.001:
+            hw = w * 0.92
+            shapes.append((heart, _scaled(_heart_unit(), hw, hw * (h / h_full))))
+        pts = [(sum(wt * s[i][0] for wt, s in shapes), sum(wt * s[i][1] for wt, s in shapes))
+               for i in range(POINTS)]
+        lid = _clamp(e["lid"], 0, 0.9)
+        if lid > 0.001:
+            # Cut the top along a slanted line (inner corner = towards the nose).
+            top = -h / 2
+            out = []
+            for x, y in pts:
+                s = -side * x / w  # +0.5 at the inner corner, -0.5 at the outer
+                line = top + h * lid * (1 + e["slope"] * 1.6 * s)
+                out.append((x, max(y, line)))
+            pts = out
+        return _rotate(pts, e["rot"]), w, h_full, h
 
-        # Highlights stay put in the eye (they are reflections), mirrored per eye.
-        hx = -side * 0.0
-        big = W2 * 0.13
-        pygame.draw.ellipse(s, HIGHLIGHT, pygame.Rect(
-            pcx - pw * 0.30 - big + hx, pcy - ph * 0.30 - big * 1.1, big * 2, big * 2.2))
-        small = W2 * 0.05
-        pygame.draw.circle(s, HIGHLIGHT, (pcx + pw * 0.22, pcy + ph * 0.25), small)
+    def _eye(self, target, unit, side, e, p, frame, centre):
+        pts, w, h_full, h = self.eye_outline(unit, side, e, frame.breathe)
+        dots = _clamp(p.dots, 0, 1)
+        size = max(w, h_full) * 1.5
+        if dots < 0.999:
+            surf, ss = self._canvas(size, size)
+            c = size / 2
+            pygame.draw.polygon(surf, EYE, [((x + c) * ss, (y + c) * ss) for x, y in pts])
+            # Pupil: a dark hole that moves with the gaze and stays inside the eye.
+            shape = 1 - _clamp(e["arch"] + e["heart"], 0, 1)
+            pr = unit * 0.06 * _clamp(e["pupil"], 0, 1.2) * shape
+            pr = min(pr, h * 0.36)
+            if pr > unit * 0.004 and h > unit * 0.1:
+                margin = 0.08 * min(w, h)
+                px = _clamp(p.gaze_x, -1, 1) * max(0.0, w / 2 - pr - margin)
+                py = _clamp(p.gaze_y, -1, 1) * max(0.0, h / 2 - pr - margin)
+                (px, py), = _rotate([(px, py)], e["rot"])
+                pygame.draw.circle(surf, (0, 0, 0, 0), ((px + c) * ss, (py + c) * ss), pr * ss)
+            self._blit_glowing(target, self._finish(surf, 1 - dots), centre)
+            self.last_eye_boxes.append(pygame.Rect(0, 0, w, h).move(centre[0] - w / 2, centre[1] - h / 2))
+        if dots > 0.001:
+            self._dots(target, unit, side, dots, frame.time, centre)
 
-        # Mask: the eye ellipse minus eyelids. Applying it with BLEND_RGBA_MIN
-        # clears everything outside the visible part of the eye.
-        mask = pygame.Surface((W2, H2), pygame.SRCALPHA)
-        pygame.draw.ellipse(mask, (255, 255, 255, 255), full)
-        clear = (0, 0, 0, 0)
+    def _dots(self, target, unit, side, amount, t, centre):
+        """Processing: three square dots per eye, lighting up in turn."""
+        d = unit * 0.07
+        gap = unit * 0.045
+        width = 3 * d + 2 * gap
+        surf, ss = self._canvas(width, d)
+        for i in range(3):
+            k = i if side < 0 else i + 3  # the wave runs across both eyes
+            lit = 0.35 + 0.65 * max(0.0, math.sin(2 * math.pi * (t * 0.9 - k / 6)))
+            colour = (*EYE, int(255 * _clamp(lit, 0, 1)))
+            r = pygame.Rect(int(i * (d + gap) * ss), 0, int(d * ss), int(d * ss))
+            pygame.draw.rect(surf, colour, r, border_radius=int(d * ss * 0.18))
+        self._blit_glowing(target, self._finish(surf, amount), centre)
 
-        openness = _clamp(openness, 0.0, 1.2)
-        # Fully closed still leaves the bottom 10% of the ellipse: a sleepy curve.
-        lid_y = (1.0 - min(openness, 1.0)) * H2 * 0.9
-        slope = lid * H2 * 0.3
-        inner_y = lid_y + slope
-        outer_y = lid_y - slope
-        pad = W2
-        if side < 0:  # left eye on screen: inner corner is on its right
-            left_y, right_y = outer_y, inner_y
-        else:
-            left_y, right_y = inner_y, outer_y
-        # The lid edge bows upwards a little so a half-open eye keeps a
-        # rounded top; the bow fades out as the eye closes.
-        bow = H2 * 0.12 * min(openness, 1.0)
-        if max(left_y, right_y) + bow > 0:
-            edge = []
-            n = 16
-            for i in range(n + 1):
-                u = i / n
-                y = left_y + (right_y - left_y) * u - bow * (1 - (2 * u - 1) ** 2)
-                edge.append((u * W2, y))
-            pygame.draw.polygon(mask, clear, [(-pad, -pad), (W2 + pad, -pad),
-                                              (W2 + pad, right_y)] + edge[::-1]
-                                + [(-pad, left_y)])
-
-        smile = _clamp(smile, 0.0, 1.0)
-        if smile > 0.01:
-            ew, eh = W2 * 1.6, H2 * 1.15
-            centre_y = H2 * (0.5 + 1.25 - 0.85 * smile)
-            pygame.draw.ellipse(mask, clear, pygame.Rect(
-                W2 / 2 - ew / 2, centre_y - eh / 2, ew, eh))
-
-        s.blit(mask, (0, 0), special_flags=pygame.BLEND_RGBA_MIN)
-        if ss > 1:
-            s = pygame.transform.smoothscale(s, (max(1, W2 // ss), max(1, H2 // ss)))
-        return s
+    def _brow(self, target, unit, side, e, p, centre, breathe):
+        w = unit * 0.40 * e["w"] * breathe * 0.78
+        thick = unit * 0.045
+        h_full = unit * 0.30 * e["h"] * breathe
+        bx = centre[0] - side * unit * 0.01
+        by = centre[1] - h_full / 2 - unit * (0.075 + p.brow_y)
+        angle = e["brow_rot"] if side < 0 else -e["brow_rot"]  # + = inner end lower
+        pts = _rotate(rounded_rect(w, thick, thick / 2, 32), angle)
+        size = w * 1.2
+        surf, ss = self._canvas(size, size)
+        c = size / 2
+        pygame.draw.polygon(surf, EYE, [((x + c) * ss, (y + c) * ss) for x, y in pts])
+        self._blit_glowing(target, self._finish(surf, p.brow), (bx, by))
 
     # ---- mouth -----------------------------------------------------------
-    def _mouth(self, unit, curve, width, open_):
-        ss = self.ss
-        mw = unit * 0.13 * max(0.2, width)
-        depth = unit * 0.045
-        thick = max(2, unit * 0.016)
-        open_depth = unit * 0.11 * _clamp(open_, 0, 1)
-        pad = thick * 2
-        W2 = int((mw + pad * 2) * ss)
-        H2 = int((depth * 2 + open_depth + pad * 2) * ss)
-        s = pygame.Surface((W2, H2), pygame.SRCALPHA)
-        base_y = (pad + depth) * ss
-        n = 24
+    def mouth_outline(self, unit, p) -> List[Point]:
+        """One closed outline that can be a smile, a frown, a flat line, a
+        wavy line, a D-shaped open smile or a circle."""
+        mw = unit * 0.2 * max(0.15, p.mouth_width)
+        half = mw / 2
+        depth = unit * 0.05
+        thick = unit * 0.03
+        open_depth = unit * 0.09 * _clamp(p.mouth_open, 0, 1.2)
+        rnd = _clamp(p.mouth_round, 0, 1)
+        wave = _clamp(p.mouth_wave, 0, 1)
+        curve = _clamp(p.mouth_curve, -1.2, 1.2)
+        n = 28
         upper, lower = [], []
         for i in range(n + 1):
             u = -1 + 2 * i / n
-            x = (pad + mw / 2 + u * mw / 2) * ss
             bend = 1 - u * u
-            y = base_y + curve * depth * bend * ss
-            upper.append((x, y))
-            lower.append((x, y + open_depth * (bend ** 0.7) * ss))
-        t = int(thick * ss)
-        if open_depth * ss > t * 0.6:
-            shape = upper + lower[::-1]
-            pygame.draw.polygon(s, MOUTH_INSIDE, shape)
-            pygame.draw.lines(s, LINE, False, lower, t)
-        pygame.draw.lines(s, LINE, False, upper, t)
-        for end in (upper[0], upper[-1], lower[len(lower) // 2]):
-            if end is lower[len(lower) // 2] and open_depth * ss <= t * 0.6:
-                continue
-            pygame.draw.circle(s, LINE, end, t / 2)
-        if ss > 1:
-            s = pygame.transform.smoothscale(s, (max(1, W2 // ss), max(1, H2 // ss)))
-        return s
+            ell = math.sqrt(max(0.0, bend))
+            centre = curve * depth * (bend - 0.5) + wave * depth * 0.5 * math.sin(u * math.pi)
+            x = u * half
+            top = centre - thick / 2
+            bottom = centre + thick / 2 + open_depth * ell  # open: a half-disc below the line
+            # Round: blend towards a circle of the mouth's width.
+            upper.append((x, top + (-half * ell - top) * rnd))
+            lower.append((x, bottom + (half * ell - bottom) * rnd))
+        return upper + lower[::-1]
+
+    def _mouth(self, target, unit, p, centre):
+        pts = self.mouth_outline(unit, p)
+        xs = [x for x, _ in pts]
+        ys = [y for _, y in pts]
+        thick = unit * 0.03
+        w = max(xs) - min(xs) + thick * 2
+        h = max(ys) - min(ys) + thick * 2
+        size = max(w, h) + thick * 2
+        surf, ss = self._canvas(size, size)
+        c = size / 2
+        mid_y = (max(ys) + min(ys)) / 2
+        poly = [((x + c) * ss, (y - mid_y + c) * ss) for x, y in pts]
+        pygame.draw.polygon(surf, EYE, poly)
+        if p.mouth_round < 0.5:  # rounded ends on a line-like mouth
+            n = len(pts) // 2
+            for a, b in ((poly[0], poly[-1]), (poly[n - 1], poly[n])):
+                pygame.draw.circle(surf, EYE, ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2),
+                                   max(1.0, abs(b[1] - a[1]) / 2))
+        ring = _clamp(p.mouth_ring, 0, 1)
+        if ring > 0.01:
+            rx = max(0.0, (max(xs) - min(xs)) / 2 - thick) * ring
+            ry = max(0.0, (max(ys) - min(ys)) / 2 - thick) * ring
+            if rx > 0.5 and ry > 0.5:
+                hole = pygame.Rect(0, 0, 2 * rx * ss, 2 * ry * ss)
+                hole.center = (c * ss, c * ss)
+                pygame.draw.ellipse(surf, (0, 0, 0, 0), hole)
+        self._blit_glowing(target, self._finish(surf), (centre[0], centre[1] + mid_y))
 
     # ---- particles -------------------------------------------------------
-    def _particle(self, target, p, rect, unit, time):
+    def _particle(self, target, p, rect, unit):
         a = _clamp(p.alpha, 0, 1)
-        if a <= 0.01:
+        if a <= 0.01 or p.kind != "zzz":
             return
         x, y = rect.x + p.x * rect.width, rect.y + p.y * rect.height
-        if p.kind == "sparkle":
-            r = p.size * unit * (0.6 + 0.4 * a)
-            ang = p.spin * 3
-            pts = []
-            for k in range(8):
-                rad = r if k % 2 == 0 else r * 0.28
-                th = ang + k * math.pi / 4
-                pts.append((x + rad * math.cos(th), y + rad * math.sin(th)))
-            colour = _lerp_colour(BACKGROUND, (200, 245, 255), a)
-            pygame.draw.polygon(target, colour, pts)
-        elif p.kind in ("zzz", "question"):
-            text = "z" if p.kind == "zzz" else "?"
-            size = p.size * unit * (1.0 + 0.4 * (1 - p.life / p.max_life))
-            if p.kind == "question":
-                y += math.sin(time * 2.2) * unit * 0.01
-            surf = self._font(size).render(text, True, _lerp_colour(BACKGROUND, LINE, a))
-            target.blit(surf, surf.get_rect(center=(x, y)))
+        s = p.size * unit * (1.0 + 0.5 * (1 - p.life / p.max_life))
+        t = max(1.5, s * 0.2)
+        # A geometric "Z": top bar, diagonal, bottom bar.
+        h = s / 2
+        bars = [[(-h, -h), (h, -h), (h, -h + t), (-h, -h + t)],
+                [(-h, h - t), (h, h - t), (h, h), (-h, h)],
+                [(h - t * 1.3, -h + t), (h, -h + t), (-h + t * 1.3, h - t), (-h, h - t)]]
+        size = s * 1.6
+        surf, ss = self._canvas(size, size)
+        c = size / 2
+        for bar in bars:
+            pts = _rotate(bar, p.spin * 8)
+            pygame.draw.polygon(surf, EYE, [((px + c) * ss, (py + c) * ss) for px, py in pts])
+        self._blit_glowing(target, self._finish(surf, a * 0.9), (x, y))

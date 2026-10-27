@@ -19,7 +19,7 @@ FAILURES = ("ok", "error", "timeout", "invalid", "slow")
 CANNED = [
     (("why", "how", "explain", "what makes"),
      "Ooh, great question! My thinking circuits are still in training, so I'm only a pretend brain "
-     "today. What do you think the answer is?", "thinking"),
+     "today. What do you think the answer is?", "curious"),
     (("dinosaur", "dinosaurs", "dino"),
      "Dinosaurs! Rawr! I think a T-rex would be rubbish at clapping. Which dinosaur is your favourite?",
      "excited"),
