@@ -287,6 +287,7 @@ def test_performance_summary_labels_machine():
 def make_robot():
     config = load_config()
     config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
+    config["ai"]["local_provider"] = "mock"  # never a real Ollama in tests
     robot = AlfieBot(config, create_simulator_platform(config, speech=False),
                      ConversationEngine("AlfieBot", rng=random.Random(0)))
     robot.start()

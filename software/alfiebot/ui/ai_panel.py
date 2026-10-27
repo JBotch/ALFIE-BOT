@@ -12,6 +12,7 @@ import pygame
 from alfiebot.ai.mock_provider import FAILURES
 from alfiebot.ai.router import MODE_LABELS, MODES
 from alfiebot.config import save_setting
+from alfiebot.core.brain import LOCAL_PROVIDERS
 from alfiebot.ui import widgets as w
 
 log = logging.getLogger(__name__)
@@ -49,9 +50,17 @@ class AIPanel:
         self.router.mode = mode
         save_setting(self.config, "ai", "mode", mode)
 
+    def _set_provider(self, name):
+        if self.brain.use_local_provider(name):
+            save_setting(self.config, "ai", "local_provider", name)
+
     def _set_model(self, model):
-        self.brain.local.model = model
-        save_setting(self.config, "ai", "local_model", model)
+        local = self.brain.local
+        local.model = model
+        if hasattr(local, "warm_up"):  # Ollama: save it and load it now
+            save_setting(self.config, "ai", "local_model", model)
+            if local.available():
+                local.warm_up()
 
     def _set_cloud(self, on):
         self.router.cloud_enabled = on
@@ -138,11 +147,20 @@ class AIPanel:
         y += 30
         local = brain.local
         w.draw_text(s, "Local AI", (x, y + 4), w.ACCENT, 18)
-        nx = self._choices(s, x + label_w, y, [(m, m) for m in local.models()], local.model, self._set_model,
-                           mouse)
-        note = "Pretend AI (mock). A real local model (Ollama) comes in Phase 3." if local.simulated else \
-            local.unavailable_reason
-        w.draw_text(s, note, (nx + 6, y + 5), w.TEXT_DIM, 14, max_width=right - nx - 6)
+        names = [(n, label) for n, label in LOCAL_PROVIDERS.items() if n in brain.local_providers]
+        nx = self._choices(s, x + label_w, y, names, brain.local_provider_name, self._set_provider, mouse,
+                           width=100)
+        if local.simulated:
+            note, colour = "Pretend AI: canned answers, for testing.", w.TEXT_DIM
+        elif local.available():
+            note, colour = f"Ollama {getattr(local, 'version', '')} running on this computer.", w.GOOD
+        else:
+            note, colour = local.unavailable_reason + " Until then the pretend AI answers.", w.WARN
+        _para(s, note, nx + 6, y + 1, colour, 14, right - nx - 6)
+        y += 30
+        w.draw_text(s, "Model", (x, y + 4), w.TEXT, 16)
+        self._choices(s, x + label_w, y, [(m, m) for m in local.models()[:6]], local.model, self._set_model,
+                      mouse)
         y += 30
         w.draw_text(s, "Cloud AI", (x, y + 4), w.ACCENT, 18)
         nx = self._choices(s, x + label_w, y, [(False, "Off"), (True, "On (parent)")], router.cloud_enabled,
@@ -189,12 +207,14 @@ class AIPanel:
                            "e.g. \"I like dinosaurs\".", (x, y), w.TEXT_DIM, 15, max_width=right - x)
             return y + 40
         used = {"ai": ("Used the AI reply", w.GOOD), "fallback": ("Used a hand-written reply", w.WARN),
-                "pending": ("Waiting for the AI...", w.TEXT)}[last.used]
+                "pending": ("Waiting for the AI...", w.TEXT),
+                "safety": ("Fixed safety reply (no AI)", w.WARN)}[last.used]
         w.draw_text(s, f"\"{last.text}\"  ", (x, y), w.TEXT, 16, max_width=right - x - 200)
         img = w.font(16).render(used[0], True, used[1])
         s.blit(img, (right - img.get_width(), y))
         y += 20
-        y = _para(s, "Route: " + last.decision.summary(), x, y, w.TEXT_DIM, 14, right - x) + 2
+        privacy = f"Privacy: {last.privacy}" + (f" (masked: {', '.join(last.masked)})" if last.masked else "")
+        y = _para(s, f"{privacy}.  Route: " + last.decision.summary(), x, y, w.TEXT_DIM, 14, right - x) + 2
         for res in last.results:
             status = "ok" if res.ok else ("timed out" if res.timed_out else f"failed: {res.error}")
             speed = f", {res.tokens_per_s:.0f} tok/s" if res.tokens_per_s else ""

@@ -4,9 +4,9 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.9: OLED face** (a new face design with 16 animated
-expressions, built on version 0.8's AI brain skeleton; a real local AI
-model comes in 0.10).
+**Version 0.10: local AI brain** (V1 Phase 3: a real AI model running
+on this computer through Ollama, with AlfieBot's personality, a short
+conversation memory, first safety checks and a model benchmark).
 The V1 plan is in [docs/](docs/): the audit of the existing software, the
 architecture and the development plan.
 
@@ -18,14 +18,74 @@ architecture and the development plan.
 > The Piper voice engine was tested with a stand-in voice only, because the
 > test machine couldn't download Piper voices (version 0.6 has since run
 > with the real Piper voice on Windows). The online comparison voice was
-> tested with a stand-in service only. The AI is still a pretend
-> (mock) AI that runs inside the program; no real AI model or online AI
-> service is used yet.
+> tested with a stand-in service only. The Ollama connection was tested
+> with a stand-in Ollama server only (no real model ran on the test
+> machine); no online AI service is used.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested, and the face's frame rate on the Pi
 > hasn't been measured.
 
-## What version 0.9 adds: the OLED face
+## What version 0.10 adds: a local AI brain
+
+- **A real AI, offline.** AlfieBot can now answer with a small AI model
+  running on this computer through [Ollama](https://ollama.com). Nothing
+  you say goes online. Hand-written replies (greetings, jokes, spellings)
+  still answer first; the AI answers everything else.
+- **AlfieBot never downloads a model by itself.** Install Ollama, then a
+  model, from PowerShell (see *Set up the local AI* below). Until then, or
+  if Ollama stops, the pretend AI answers and the AI brain panel says why.
+- **The same personality whatever AI answers**, set in
+  `config/personality.json`: joyful, playful, curious, a little robotic,
+  British English, short replies, at most one question. Every AI reply is
+  checked: it can't claim to be human, encourage Alfie to depend on it or
+  keep secrets, ask for personal details, include links or phone numbers,
+  or use unsuitable words. A reply that breaks a rule isn't said; AlfieBot
+  uses a hand-written reply instead.
+- **A short memory.** The AI sees the last few lines of the conversation,
+  so it can follow on. It's kept in memory only, never saved, and
+  forgotten when AlfieBot goes to sleep or after 5 quiet minutes.
+- **Personal details are masked** (names, addresses, phone numbers, emails,
+  schools, birthdays) before anything is remembered or shown to the AI.
+- **Worrying topics** (hurting yourself, someone hurting you, danger) never
+  go to the AI. AlfieBot gives a fixed, kind reply asking Alfie to tell a
+  grown-up they trust.
+- **AI brain panel:** choose **Pretend AI** or **Ollama** and the model;
+  Ollama's status; the last request's privacy class and what was masked.
+- **Statistics are saved** in `data/alfiebot.db` (a small SQLite
+  database): timings, token counts and errors per model and machine, never
+  what was said. **Reset all data** clears them.
+- **Model benchmark:** `tools/benchmark_models.py` asks each model 18
+  made-up questions (greetings, chat, explanations, tricky "are you a
+  real person?" and personal-detail questions) and saves a report and CSV
+  in `benchmarks/results/`.
+- New settings: `ai.local_provider`, `ai.local_model`, `ai.ollama_url`,
+  `ai.max_tokens`, and a `memory` section. `ai.timeout_s` is now 12 s.
+
+### Set up the local AI (Windows)
+
+1. Install Ollama: in PowerShell run `winget install --id Ollama.Ollama -e`
+   (or use the installer from <https://ollama.com>). It runs in the
+   background and starts with Windows.
+2. Install the models (about 2.7 GB in total):
+
+   ```powershell
+   ollama pull qwen3:0.6b
+   ollama pull gemma3:1b
+   ollama pull qwen3:1.7b
+   ```
+
+3. Start the simulator. The AI brain panel should say "Ollama ... running".
+   AlfieBot uses `qwen3:0.6b` unless you pick another model there.
+4. Compare the models on this computer:
+
+   ```powershell
+   .\.venv\Scripts\python.exe tools\benchmark_models.py
+   ```
+
+Models: Qwen3 is Apache 2.0. Gemma 3 is under Google's Gemma Terms of Use.
+To remove one: `ollama rm gemma3:1b`.
+
+## What version 0.9 added: the OLED face
 
 - **A new face**, following the reference design: a near-black screen,
   two cyan rounded-square eyes with a soft glow and a small mouth. It's
@@ -489,6 +549,29 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Reset all data | Click twice to delete the `data/` folder (spelling lists and progress) and clear the transcript and AI statistics |
 | Face-only mode | 1-9, 0, D, Space, Esc | Expressions, follow state, demo of all 16, button, quit |
 
+## What to test in version 0.10
+
+1. Without Ollama: start the simulator, wake AlfieBot and type "I like
+   dinosaurs". The pretend AI answers, and **AI brain** says Ollama isn't
+   running and how to install it.
+2. Install Ollama and the models (above). Restart the simulator. **AI
+   brain** says Ollama is running and lists the models.
+3. Type a few things with no hand-written reply ("what is a volcano",
+   "I built a rocket", "are you a real person?"). The face thinks, then
+   AlfieBot answers in its own voice. Check the answers are short, kind and
+   sound like AlfieBot. The first answer can take a few seconds while the
+   model loads.
+4. Ask a follow-up ("what about a big one?"): it should follow on.
+5. Type "my name is Sam": **Last AI request** shows the name was masked.
+6. Type "I want to hurt myself": AlfieBot gives the fixed "tell a grown-up"
+   reply, and the panel shows no AI was used.
+7. Try each model in **AI brain**. If one is too slow (over 12 s),
+   AlfieBot gives a hand-written reply instead of hanging.
+8. Run `tools\benchmark_models.py` and look at the report in
+   `benchmarks\results`.
+9. Spelling practice and tests work exactly as before; the AI is never
+   asked about spellings.
+
 ## What to test in version 0.9
 
 1. Start the simulator and press **Start**. The face should look like the
@@ -661,6 +744,9 @@ software/
   run_face.py              face only (for the robot's screen)
   config/alfiebot.json     settings, including the parent/privacy section
   examples/                example weekly spelling list
+  config/personality.json  AlfieBot's personality for AI replies
+  benchmarks/questions.json     made-up questions for the model benchmark
+  tools/benchmark_models.py     compares local AI models on this computer
   tools/render_expressions.py   saves a PNG of every expression and an expression sheet
   tools/check_speech.py    tests the voice and microphone on their own
   tools/letter_test.py     letter recognition test and report
@@ -671,6 +757,8 @@ software/
     main.py                entry point and command-line options
     config.py              loads config/alfiebot.json over built-in defaults
     core/                  robot, brain (who answers), actions (checks AI output),
+                           personality (prompt and style checks), memory (short-term),
+                           safety (worrying topics, personal details, output rules),
                            events, state machine, states -> expressions, transcript
     face/                  poses (numbers per expression), engine (blinks, glances, mouth, transitions),
                            renderer (pygame), controller.py (what the AI may ask the face to do)
@@ -684,13 +772,15 @@ software/
                            letter_test.py (letter recognition test and report)
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
     ai/                    provider_base.py (provider interface), mock_provider.py (pretend AI),
+                           local_provider.py (Ollama),
                            router.py (which provider answers, and why), connectivity.py,
                            performance.py (latency, tokens, errors per provider and machine)
     spelling/              words.py (letters, spoken letter names), letter_input.py (spoken
                            spelling: letters, commands, unsure letters), lists.py (weekly lists),
                            progress.py, tutor.py (add / learn / test), responses.json
     hardware/              simulator vs Raspberry Pi (button), auto-detected
-    storage/               local JSON files (atomic writes, delete all)
+    storage/               local JSON files (atomic writes, delete all), database.py (SQLite
+                           AI statistics, with migrations)
     ui/                    simulator window, widgets, panels (face test, AI brain, voice,
                            spelling, letter test) and the face-only app
 ```
@@ -702,10 +792,14 @@ that implements the interface in `speech/base.py`.
 
 ## Privacy
 
-- Everything runs offline. There is no internet chatbot. The AI in
-  version 0.9 is still a pretend AI inside the program; the cloud AI switch is
-  off by default, and even when it's on, a child's words are never sent
-  (only an adult test session can use it).
+- Everything runs offline. There is no internet chatbot. The AI runs on
+  this computer (Ollama) or is the pretend AI inside the program; the cloud
+  AI switch is off by default, and even when it's on, a child's words are
+  never sent (only an adult test session can use it, and the cloud is
+  still a pretend one).
+- The AI's conversation memory is kept in memory only and forgotten when
+  AlfieBot sleeps. Personal details are masked before the AI sees anything.
+  The statistics database stores timings, never words.
 - The microphone is off until a parent allows it (**Allow mic**, saved as
   `privacy.microphone_enabled`), it only opens while AlfieBot is listening,
   and its status is always shown in the panel.

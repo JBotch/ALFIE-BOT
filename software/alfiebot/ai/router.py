@@ -14,6 +14,9 @@ Phase 2 rules (privacy classification and cost limits arrive in Phases 3-4):
 5. If the first choice fails, the other allowed provider is tried. A slow
    local reply never sends anything to the cloud unless rule 1 already
    allows it.
+6. If the local AI isn't available (Ollama not running, model not
+   installed), the local stand-in (the pretend AI) takes its place, and the
+   reasons say why.
 """
 
 import logging
@@ -48,8 +51,9 @@ class RoutingDecision:
 class Router:
     def __init__(self, local: Optional[AIProvider], cloud: Optional[AIProvider] = None,
                  connectivity: Connectivity = None, mode: str = "local_only",
-                 cloud_enabled: bool = False):
+                 cloud_enabled: bool = False, local_fallback: Optional[AIProvider] = None):
         self.local = local
+        self.local_fallback = local_fallback
         self.cloud = cloud
         self.connectivity = connectivity or Connectivity()
         self.mode = mode if mode in MODES else "local_only"
@@ -74,15 +78,20 @@ class Router:
 
     def choose(self, text: str, privacy: str = "unclassified") -> RoutingDecision:
         reasons = [f"mode {self.mode}"]
-        local_ok = self.local is not None and self.local.available()
+        local_provider = self.local
+        local_ok = local_provider is not None and local_provider.available()
         if not local_ok:
             reasons.append("local AI unavailable: "
-                           + (self.local.unavailable_reason if self.local else "none configured"))
+                           + (local_provider.unavailable_reason if local_provider else "none configured"))
+            backup = self.local_fallback
+            if backup is not None and backup is not local_provider and backup.available():
+                local_provider, local_ok = backup, True
+                reasons.append(f"using {backup.label} instead")
         blocked = self.cloud_blocked_reason(privacy)
         cloud_ok = blocked is None
         if blocked:
             reasons.append(f"no cloud: {blocked}")
-        local = [self.local] if local_ok else []
+        local = [local_provider] if local_ok else []
         cloud = [self.cloud] if cloud_ok else []
 
         if self.mode == "local_only":

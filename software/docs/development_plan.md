@@ -38,15 +38,18 @@ Added at Jordan's request before the next AI phase, from the "OLED Face Design &
 - **Demo:** `python run_face.py --windowed --demo`, or **Face test** then **Demo all 16** in the simulator.
 - Not done: Raspberry Pi frame rate. On the Linux test machine one face frame takes about 14 ms at 1280x720 and 7 ms at 800x480 (3 ms with `"supersample": 1`); the Pi must be measured on the real hardware.
 
-## Phase 3: Local AI brain (v0.10)
+## Phase 3: Local AI brain (v0.10, built; real models on the PC pending)
 
-- [ ] `config/personality.json`, `core/personality.py`, `core/memory.py`, `core/safety.py` (first version)
-- [ ] `ai/local_provider.py` for Ollama: detection, model list, chat with JSON schema output, thinking off, timeouts
-- [ ] Re-check model licences and sizes, then (with Jordan's go-ahead) pull `qwen3:0.6b`, `qwen3:1.7b`, `gemma3:1b` on the PC
-- [ ] `ai/performance.py` + SQLite `ai_requests` table, `storage/database.py` with migrations
-- [ ] `tools/benchmark_models.py` with `benchmarks/questions.json` (greetings, simple chat, explanations, tricky "are you human?" and personal-data prompts), CSV and SQLite output, machine label
-- [ ] Performance view in the AI panel, with Pi 5 shown as "not measured"
-- [ ] Tests: personality checks, memory expiry, provider unavailable, malformed model output (using the mock and a fake Ollama server)
+- [x] `config/personality.json`, `core/personality.py`, `core/memory.py`, `core/safety.py` (first version)
+- [x] `ai/local_provider.py` for Ollama: detection, model list, chat with JSON schema output, thinking off, timeouts, streaming so a cancelled request stops early, warm-up; the pretend AI stands in when Ollama or the model is missing
+- [x] Re-checked sizes on ollama.com (qwen3:0.6b 523 MB, gemma3:1b 806 MB, qwen3:1.7b 1.4 GB); Jordan approved installing Ollama and all three
+- [ ] Ollama and the models installed on the PC (Jordan installs Ollama: the PC's permission check blocks installers run remotely)
+- [x] SQLite `ai_requests` table via `storage/database.py` with migrations; `ai/performance.py` saves to it
+- [x] `tools/benchmark_models.py` with `benchmarks/questions.json`, Markdown and CSV report, SQLite, machine label
+- [ ] Benchmark run on the PC
+- [x] AI panel: Pretend AI / Ollama, model choice, Ollama status, privacy class of the last request; Pi 5 shown as "not measured"
+- [x] Tests: personality checks, memory expiry, safety patterns, provider unavailable, missing model, malformed output, cancelled request, benchmark (all against a stand-in Ollama server)
+- Not done yet: the brief's adaptive learning (Phase 5) and the full privacy gate for the cloud (Phase 4). Requests are classified but the router still treats every child request as "unclassified".
 - **Demo:** a typed conversation with a local model on the laptop; benchmark report comparing the three models on laptop hardware.
 
 ## Phase 4: Hybrid router (v0.11)

@@ -251,6 +251,7 @@ class SimulatorApp:
         robot.conversation.reset()
         robot.brain.performance.reset()
         robot.brain.last = None
+        robot.brain.memory.clear()
         log.info("Simulation reset: spelling lists, progress, transcript and AI statistics cleared")
 
     def _toggle_face_fullscreen(self):

@@ -45,6 +45,7 @@ from alfiebot.speech.base import TextToSpeech
 from alfiebot.speech.null import TranscriptOnlyTTS
 from alfiebot.speech.sounds import personality_sounds
 from alfiebot.speech.voice_profiles import get_personality, profile_for_reply
+from alfiebot.storage.database import Database
 from alfiebot.storage.json_store import JsonStore
 
 log = logging.getLogger(__name__)
@@ -99,7 +100,7 @@ class AlfieBot:
                                    min_confidence=speech.get("min_confidence", 0.75),
                                    confirm_spoken=spelling.get("confirm_spoken_answers", "always"),
                                    phonetic=spelling.get("phonetic_words", "child"))
-        self.brain = brain or Brain(config, self.conversation, self.tutor)
+        self.brain = brain or Brain(config, self.conversation, self.tutor, db=Database(config["data_dir"]))
         self._pending: Optional[PendingReply] = None
         # Developer panel: voice output off shows replies in the transcript only.
         self.voice_output = True
@@ -183,6 +184,8 @@ class AlfieBot:
             self.play_sound("listen")
         if new in LISTENING_STATES:
             self.listen_time_left = self.listen_timeout
+        if new == RobotState.SLEEPING:
+            self.brain.memory.clear()  # AlfieBot forgets the conversation when it sleeps
         if new in ASLEEP_STATES:
             self._cancel_pending()
             self.conversation.reset()

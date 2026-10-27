@@ -67,14 +67,21 @@
     "finish_after_pause": 5.0
   },
   "ai": {
-    "_comment": "The AI brain. Only a pretend (mock) AI exists so far: a real local model (Ollama) comes next. enabled: false uses only the hand-written replies. mode: local_only, cloud_only or automatic. cloud_enabled: parent setting, false by default; even when true a child's words never go to the cloud until privacy checks are built (only an adult test session can use it). timeout_s: how long AlfieBot waits for an AI answer before giving a hand-written reply. mock_delay_s: makes the pretend AI take this long, to see the thinking face.",
+    "_comment": "The AI brain. enabled: false uses only the hand-written replies. local_provider: ollama (a real AI model on this computer, see ollama.com) or mock (a pretend AI, for testing). If Ollama isn't running or the model isn't installed, the pretend AI answers instead and the AI brain panel says why. local_model: the Ollama model, e.g. qwen3:0.6b, gemma3:1b or qwen3:1.7b (install with: ollama pull qwen3:0.6b). AlfieBot never downloads models itself. mode: local_only, cloud_only or automatic. cloud_enabled: parent setting, false by default; even when true a child's words never go to the cloud until the privacy checks are finished (only an adult test session can use it). timeout_s: how long AlfieBot waits for an AI answer before giving a hand-written reply. max_tokens: the longest AI answer. mock_delay_s: makes the pretend AI take this long, to see the thinking face.",
     "enabled": true,
     "mode": "local_only",
-    "local_provider": "mock",
-    "local_model": "mock-1",
+    "local_provider": "ollama",
+    "local_model": "qwen3:0.6b",
+    "ollama_url": "http://localhost:11434",
     "cloud_enabled": false,
-    "timeout_s": 8.0,
+    "timeout_s": 12.0,
+    "max_tokens": 160,
     "mock_delay_s": 0.0
+  },
+  "memory": {
+    "_comment": "What AlfieBot remembers of a conversation, in memory only (never saved). conversation_turns: how many recent lines it keeps for the AI. conversation_idle_minutes: forgets them after this long without talking. It also forgets everything when it goes to sleep.",
+    "conversation_turns": 10,
+    "conversation_idle_minutes": 5.0
   },
   "hardware": {
     "button_gpio_pin": 17

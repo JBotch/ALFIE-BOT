@@ -3,11 +3,14 @@ provider and model, labelled with the machine that measured them.
 
 Laptop numbers say nothing about a Raspberry Pi 5, so every record carries
 the machine label and the panel shows the Pi as "not measured" until the
-same benchmark has been run on one. Kept in memory for now; Phase 3 stores
-it in SQLite.
+same benchmark has been run on one. With a database, every request is
+also saved to the ``ai_requests`` table (timings and counts only, never
+what was said) and the statistics survive a restart.
 """
 
+import logging
 import platform
+import sqlite3
 import statistics
 import threading
 import time
@@ -15,6 +18,8 @@ from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from alfiebot.ai.provider_base import AIResult
+
+log = logging.getLogger(__name__)
 
 
 def machine_label() -> str:
@@ -40,6 +45,7 @@ class Record:
     tokens_per_s: Optional[float]
     error: Optional[str]
     cost_estimate: float
+    source: str = "chat"  # "chat" or "benchmark"
 
 
 @dataclass
@@ -59,22 +65,51 @@ class Summary:
 class PerformanceTracker:
     MAX_RECORDS = 2000
 
-    def __init__(self, machine: str = None):
+    def __init__(self, machine: str = None, db=None):
         self.machine = machine or machine_label()
+        self.db = db
         self.records: List[Record] = []
         self._lock = threading.Lock()
+        if db is not None:
+            self._load()
 
-    def record(self, result: AIResult) -> None:
+    def _load(self) -> None:
+        try:
+            rows = self.db.query("SELECT * FROM ai_requests ORDER BY id DESC LIMIT ?", (self.MAX_RECORDS,))
+        except (sqlite3.Error, OSError) as exc:
+            log.error("Couldn't read AI statistics: %s", exc)
+            return
+        self.records = [Record(r["at"], r["machine"], r["provider"], r["model"], bool(r["ok"]),
+                               bool(r["timed_out"]), r["latency_s"], r["completion_tokens"], r["tokens_per_s"],
+                               r["error"], r["cost"], r["source"]) for r in reversed(rows)]
+
+    def record(self, result: AIResult, source: str = "chat", task: str = "conversation") -> None:
         rec = Record(time.time(), self.machine, result.provider, result.model, result.ok,
                      result.timed_out, result.latency_s, result.completion_tokens,
-                     result.tokens_per_s, result.error, result.cost_estimate)
+                     result.tokens_per_s, result.error, result.cost_estimate, source)
         with self._lock:
             self.records.append(rec)
             del self.records[:-self.MAX_RECORDS]
+        if self.db is not None:
+            try:
+                self.db.execute(
+                    "INSERT INTO ai_requests (at, machine, source, provider, model, task, ok, timed_out, latency_s,"
+                    " prompt_tokens, completion_tokens, tokens_per_s, memory_mb, cost, error)"
+                    " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (rec.at, rec.machine, source, rec.provider, rec.model, task, int(rec.ok), int(rec.timed_out),
+                     rec.latency_s, result.prompt_tokens, rec.completion_tokens, rec.tokens_per_s,
+                     result.memory_mb, rec.cost_estimate, (rec.error or "")[:200] or None))
+            except (sqlite3.Error, OSError) as exc:
+                log.error("Couldn't save AI statistics: %s", exc)
 
     def reset(self) -> None:
         with self._lock:
             self.records.clear()
+        if self.db is not None:
+            try:
+                self.db.execute("DELETE FROM ai_requests")
+            except (sqlite3.Error, OSError) as exc:
+                log.error("Couldn't clear AI statistics: %s", exc)
 
     def summaries(self) -> List[Summary]:
         with self._lock:

@@ -15,6 +15,7 @@ def make_robot(ai=True, **timing):
     config["conversation"].update(timing)
     config["ai"]["enabled"] = ai
     config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
+    config["ai"]["local_provider"] = "mock"  # never a real Ollama in tests
     robot = AlfieBot(config, create_simulator_platform(config, speech=False),
                      ConversationEngine("AlfieBot", rng=random.Random(0)))
     states = []
