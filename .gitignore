@@ -1,0 +1,4 @@
+__pycache__/
+*.pyc
+AlfieBot_Validation_Report.txt
+.DS_Store
