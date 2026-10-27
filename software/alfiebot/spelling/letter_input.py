@@ -4,7 +4,8 @@ time or in short runs.
 Conversation and spelling are recognised differently. While a child spells,
 the recogniser is limited to ``LETTER_GRAMMAR`` (letter names, "B for ball"
 words and a few commands), and every letter keeps its own confidence score.
-The letters build up on screen as they are heard:
+The letters build up as they are heard (the developer panel shows them;
+the robot's face never does):
 
     "bee ee see"        -> B E C
     "delete"            -> B E

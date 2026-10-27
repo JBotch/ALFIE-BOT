@@ -11,6 +11,7 @@ from alfiebot.config import save_setting
 from alfiebot.core.robot import AlfieBot
 from alfiebot.core.states import Expression, RobotState
 from alfiebot.ui import widgets as w
+from alfiebot.ui.ai_panel import AIPanel
 from alfiebot.ui.face_view import FaceView
 from alfiebot.ui.letter_test_panel import LetterTestPanel
 from alfiebot.ui.voice_panel import VoicePanel
@@ -138,6 +139,10 @@ class SimulatorApp:
         self.spelling = SpellingPanel(self.robot, (12, 12, self.bezel.width, H - 24))
         self.letter_test = LetterTestPanel(self.robot, (12, 12, self.bezel.width, H - 24))
         self.voice = VoicePanel(self.robot, self.config, (12, 12, self.bezel.width, H - 24))
+        self.ai = AIPanel(self.robot, self.config, (12, 12, self.bezel.width, H - 24))
+        self.ai_btn = add((px + 170, 18, 84, 24), "AI brain", self._toggle_ai, size=15)
+        self.speaker_btn = add((px + 260, 18, 96, 24), "Speaker: on",
+                               lambda: self.robot.set_voice_output(not self.robot.voice_output), size=15)
         add((px + inner - 110, y - 3, 110, 22), "Letter test", self._toggle_letter_test, size=15)
 
         # Parent area.
@@ -145,7 +150,7 @@ class SimulatorApp:
         self.y_parent = y
         bw = (inner - 12) // 3
         self.allow_mic_btn = add((px, y + 46, bw, 28), "Allow mic: no", self._toggle_allow_mic, size=16)
-        self.delete_btn = add((px + bw + 6, y + 46, bw, 28), "Delete local data", self._delete_data, size=16)
+        self.delete_btn = add((px + bw + 6, y + 46, bw, 28), "Reset all data", self._delete_data, size=16)
         add((px + 2 * (bw + 6), y + 46, bw, 28), "Full-screen face",
             self._toggle_face_fullscreen, size=16)
 
@@ -158,18 +163,28 @@ class SimulatorApp:
         words = [(word, confidence) for word in text.lower().split()]
         self.robot.handle_text(text, "simulated", confidence, words)
 
+    def _close_overlays(self):
+        self.spelling.open = self.voice.open = self.ai.open = False
+        if self.letter_test.open:
+            self.letter_test.toggle()
+
+    def _toggle_ai(self):
+        was_open = self.ai.open
+        self._close_overlays()
+        self.ai.open = not was_open
+
     def _toggle_letter_test(self):
-        self.spelling.open = self.voice.open = False
+        self.spelling.open = self.voice.open = self.ai.open = False
         self.letter_test.toggle()
 
     def _toggle_lists(self):
-        self.voice.open = False
+        self.voice.open = self.ai.open = False
         if self.letter_test.open:
             self.letter_test.toggle()
         self.spelling.toggle("lists")
 
     def _toggle_voice(self):
-        self.spelling.open = False
+        self.spelling.open = self.ai.open = False
         if self.letter_test.open:
             self.letter_test.toggle()
         self.voice.toggle()
@@ -203,12 +218,19 @@ class SimulatorApp:
         now = time.monotonic()
         if now > self._delete_armed_until:
             self._delete_armed_until = now + 4.0
-            log.warning("Click 'Delete local data' again within 4 s to delete %s", self.store.base_dir)
+            log.warning("Click 'Reset all data' again within 4 s to delete %s and reset the simulation",
+                        self.store.base_dir)
             return
         self._delete_armed_until = 0.0
+        robot = self.robot
         self.store.delete_all()
-        self.robot.progress.reload()
-        self.robot.transcript.clear()
+        robot.tutor.stop()
+        robot.progress.reload()
+        robot.transcript.clear()
+        robot.conversation.reset()
+        robot.brain.performance.reset()
+        robot.brain.last = None
+        log.info("Simulation reset: spelling lists, progress, transcript and AI statistics cleared")
 
     def _toggle_face_fullscreen(self):
         self.face_fullscreen = not self.face_fullscreen
@@ -261,7 +283,7 @@ class SimulatorApp:
         if self.text_input.handle(event):
             self.spelling.input.focused = False
             return
-        if self.letter_test.handle(event) or self.voice.handle(event):
+        if self.letter_test.handle(event) or self.voice.handle(event) or self.ai.handle(event):
             return
         if self.spelling.handle(event):
             if self.spelling.input.focused and self.text_input.focused:
@@ -305,6 +327,7 @@ class SimulatorApp:
         self.spelling.draw(s, mouse, dt)
         self.letter_test.draw(s, mouse, dt)
         self.voice.draw(s, mouse, dt)
+        self.ai.draw(s, mouse, dt)
 
     def _draw_transcript(self):
         colours = {"user": w.TEXT, "robot": w.ACCENT, "system": w.TEXT_DIM}
@@ -400,7 +423,7 @@ class SimulatorApp:
         elif robot.last_heard:
             heard = f"Heard: \"{robot.last_heard[0]}\" (confidence {robot.last_heard[1]:.2f})"
         else:
-            heard = f"Voice: {robot.platform.tts.name}"
+            heard = f"Voice: {robot.platform.tts.name}" + ("" if robot.voice_output else " (speaker off)")
         w.draw_text(s, heard, (px + 100, self.y_mic + 57), w.TEXT_DIM, 16, max_width=inner - 100)
         ww = robot.platform.wake_word
         mode = ("letters A-Z + spelling commands" if robot.recognition_mode == "letters"
@@ -437,7 +460,10 @@ class SimulatorApp:
         self.allow_mic_btn.label = "Allow mic: yes" if robot.mic_allowed_by_parent else "Allow mic: no"
         self.allow_mic_btn.selected = robot.mic_allowed_by_parent
         armed = time.monotonic() < self._delete_armed_until
-        self.delete_btn.label = "Click again to confirm" if armed else "Delete local data"
+        self.delete_btn.label = "Click again to confirm" if armed else "Reset all data"
+        self.ai_btn.selected = self.ai.open
+        self.speaker_btn.label = "Speaker: on" if robot.voice_output else "Speaker: off"
+        self.speaker_btn.selected = not robot.voice_output
 
         for b in self.buttons:
             b.draw(s, mouse)

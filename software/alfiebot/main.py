@@ -62,6 +62,7 @@ def main(argv=None) -> int:
 
         return SimulatorApp(robot, config, handler).run(args.frames)
     finally:
+        robot.close()
         platform.close()
         pygame.quit()
 

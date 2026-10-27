@@ -64,6 +64,16 @@
     "phonetic_words": "child",
     "finish_after_pause": 5.0
   },
+  "ai": {
+    "_comment": "The AI brain. Only a pretend (mock) AI exists so far: a real local model (Ollama) comes next. enabled: false uses only the hand-written replies. mode: local_only, cloud_only or automatic. cloud_enabled: parent setting, false by default; even when true a child's words never go to the cloud until privacy checks are built (only an adult test session can use it). timeout_s: how long AlfieBot waits for an AI answer before giving a hand-written reply. mock_delay_s: makes the pretend AI take this long, to see the thinking face.",
+    "enabled": true,
+    "mode": "local_only",
+    "local_provider": "mock",
+    "local_model": "mock-1",
+    "cloud_enabled": false,
+    "timeout_s": 8.0,
+    "mock_delay_s": 0.0
+  },
   "hardware": {
     "button_gpio_pin": 17
   },

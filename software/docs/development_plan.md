@@ -9,18 +9,19 @@ Each phase ends with: all tests passing, a version number (V1 work continues the
 - [x] Audit the v0.7 code (`existing_system_audit.md`)
 - [x] Architecture proposal (`architecture_proposal.md`)
 - [x] Development plan and checklist (this file)
-- [ ] **Jordan approves, or asks for changes** (including the four decisions in section 13 of the proposal)
+- [x] **Jordan approved** on 27 October 2026 with the recommended choices: extend in place, keep JSON config, don't reveal the spelling after a wrong test answer, keep the brief's phase order
 
-## Phase 2: Desktop simulator and brain skeleton (v0.8)
+## Phase 2: Desktop simulator and brain skeleton (v0.8, done)
 
 Goal: the new brain runs inside the existing simulator with the mock AI. The child-facing screen follows the brief.
 
-- [ ] Remove the spelling letters from the robot face; show them in the developer panel instead
-- [ ] `core/events.py`, `core/brain.py` on a worker thread; `robot.py` hands text to the brain and polls for the `BrainResponse`
-- [ ] `ai/provider_base.py`, `ai/mock_provider.py` (configurable delay and failures)
-- [ ] `core/actions.py` allowlist and `BrainResponse` validation
-- [ ] Developer panel: voice output on/off, reset simulation data, AI panel (mode, provider, model, simulate internet failure, simulate AI failure, last routing reasons)
-- [ ] Tests: brain threading, timeout fallback, invalid responses, unauthorised actions, face never shows letters
+- [x] Remove the spelling letters from the robot face; show them in the developer panel instead
+- [x] `core/events.py`, `core/brain.py` on a worker thread; `robot.py` hands text to the brain and polls for the `BrainResponse`
+- [x] `ai/provider_base.py`, `ai/mock_provider.py` (configurable delay and failures)
+- [x] `core/actions.py` allowlist and `BrainResponse` validation
+- [x] Developer panel: voice output on/off, reset simulation data, AI panel (mode, provider, model, simulate internet failure, simulate AI failure, last routing reasons)
+- [x] Tests: brain threading, timeout fallback, invalid responses, unauthorised actions, face never shows letters
+- [x] Also done early: a first router (`ai/router.py`) with the three modes, the parent cloud switch, an adult test session, simulated internet failure and cloud-to-local fallback, and in-memory performance statistics (`ai/performance.py`). Phase 4 completes the router; Phase 3 stores statistics in SQLite
 - **Demo:** chat with the mock AI in the simulator; the face goes thinking, then speaking; turning on "simulate AI failure" gives a friendly scripted reply.
 
 ## Phase 3: Local AI brain (v0.9)

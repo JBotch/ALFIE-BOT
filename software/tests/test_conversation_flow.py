@@ -10,9 +10,10 @@ from alfiebot.core.states import Expression, RobotState
 from alfiebot.hardware.simulator import create_simulator_platform
 
 
-def make_robot(**timing):
+def make_robot(ai=True, **timing):
     config = load_config()
     config["conversation"].update(timing)
+    config["ai"]["enabled"] = ai
     config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
     robot = AlfieBot(config, create_simulator_platform(config, speech=False),
                      ConversationEngine("AlfieBot", rng=random.Random(0)))
@@ -123,7 +124,7 @@ def test_text_while_talking_is_answered_afterwards():
 
 
 def test_fallback_shows_confused_face_while_talking():
-    robot, _ = make_robot()
+    robot, _ = make_robot(ai=False)
     robot.start()
     say(robot, "Hey AlfieBot")
     finish_talking(robot)

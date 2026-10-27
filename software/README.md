@@ -4,8 +4,10 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.7: Bubbly Bot voice** (Stage 4 of 5, plus the speech
-recognition and voice upgrades).
+**Version 0.8: AI brain skeleton** (V1 Phase 2: the brain, a pretend AI
+and the developer controls for it; a real local AI model comes in 0.9).
+The V1 plan is in [docs/](docs/): the audit of the existing software, the
+architecture and the development plan.
 
 > Tested on Linux with Python 3.13 and pygame 2.6.1 (all automated tests,
 > plus headless launches of both apps, and the espeak-ng voice). The speech
@@ -15,11 +17,50 @@ recognition and voice upgrades).
 > The Piper voice engine was tested with a stand-in voice only, because the
 > test machine couldn't download Piper voices (version 0.6 has since run
 > with the real Piper voice on Windows). The online comparison voice was
-> tested with a stand-in service only.
+> tested with a stand-in service only. Version 0.8's AI is a pretend
+> (mock) AI that runs inside the program; no real AI model or online AI
+> service is used yet.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested.
 
-## What version 0.7 adds: Bubbly Bot
+## What version 0.8 adds: the AI brain skeleton
+
+- **No more letters on the robot's face.** While Alfie spells, the robot's
+  screen shows only the eyes. The letters AlfieBot heard (with a `?` after
+  unsure ones) are shown in the developer panel under *Spelling homework*
+  instead.
+- **A brain** (`alfiebot/core/brain.py`) decides who answers. A running
+  spelling activity goes to the spelling tutor, and Python marks every
+  answer. Anything with a hand-written reply (greetings, jokes, "help me with
+  my spellings") gets that reply. Anything else goes to an AI.
+- **A pretend AI** for now. It gives a few in-character answers (try "I
+  like dinosaurs" or "why is the sky blue"), so the whole path can be tried
+  without installing a model. The real local model (Ollama) comes next.
+- **AI answers run in the background**, so the eyes keep animating in the
+  thinking face. If the AI fails, is too slow (8 s), or sends back something
+  broken, AlfieBot uses its hand-written "I didn't understand" reply
+  instead.
+- **AI output is checked before it is used.** It must say what to speak,
+  which face to make, and at most one action from a short allowed list
+  (celebrate, open the spelling menu, stop listening, go to sleep).
+  Anything else is dropped and logged. AI can never run commands, change
+  settings or move hardware.
+- **AI brain panel** (button at the top of the developer panel): AI on/off,
+  mode (local only, cloud only, automatic), model, the parent cloud switch
+  and an adult test session, switches to simulate the internet going down
+  or the AI failing, the last routing decision and why, and performance
+  statistics labelled with the machine that measured them.
+- **Cloud is off by default**, and even when a parent switches it on, a
+  child's words are never sent to it until privacy checks exist (Phase 4).
+  Only an adult test session can use it. The cloud is also pretend for now:
+  nothing leaves the computer.
+- **Speaker: on/off** at the top of the panel mutes AlfieBot (replies still
+  appear in the transcript and the mouth still moves).
+- **Reset all data** (was *Delete local data*) also clears the transcript
+  and AI statistics.
+- New settings section `ai` in `config/alfiebot.json`.
+
+## What version 0.7 added: Bubbly Bot
 
 - **A new voice personality, Bubbly Bot**: a cheerful, friendly cartoon
   robot. Choose **Classic** (the v0.6 voice) or **Bubbly Bot** in the Voice
@@ -392,8 +433,30 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Letter test | Letter recognition test and report |
 | Panel | Voice | Choose the voice, voice profile and speed; test them |
 | Panel | As: typing/speech, Conf: high/low | Send simulated speech as typing (marked at once) or as speech (letters build up), sure or unsure |
-| Panel | Delete local data | Click twice to delete the `data/` folder (spelling lists and progress) |
+| Panel | AI brain | AI mode, model, cloud switch, simulated failures, routing and performance |
+| Panel | Speaker: on/off | Mute AlfieBot's voice; replies still show in the transcript |
+| Panel | Reset all data | Click twice to delete the `data/` folder (spelling lists and progress) and clear the transcript and AI statistics |
 | Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
+
+## What to test in version 0.8
+
+1. Start the simulator, wake AlfieBot and type "I like dinosaurs". The face
+   should think, then answer with a pretend-AI reply. "Tell me a joke"
+   should still get a hand-written joke.
+2. Click **AI brain**. The last request shows which AI answered and why.
+   Set **Think time** to 2 s and type something new: the eyes keep moving
+   in the thinking face while you wait.
+3. Set **Local AI** to **Too slow**: after 8 s AlfieBot gives its
+   "didn't understand" reply instead of hanging. Try **Error** and **Bad
+   output** too, then set it back to **Working**.
+4. Set **Mode** to **Cloud only**. With the cloud off, the route says so
+   and the local AI answers. Turn the cloud **On (parent)**: it still isn't
+   used for normal input. Turn on **Adult test session**: now the pretend
+   cloud answers. Set **Internet** to **Offline**: the local AI takes over.
+5. Start a spelling **Test** and spell some letters by voice (or with
+   **As: speech**). The robot's face shows no letters; the panel does.
+6. Click **Speaker: off** and talk to AlfieBot: no sound, but the replies
+   appear in the transcript.
 
 ## What to test in version 0.7
 
@@ -432,7 +495,8 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 ## What to test in version 0.5
 
 1. Simulator: click **Allow mic**, then **Test** (or **Practise**). Spell the
-   word letter by letter. Watch the letters appear under the eyes.
+   word letter by letter. Watch the letters appear in the developer panel
+   (since 0.8 they are no longer shown under the eyes).
 2. Say a wrong letter, then "delete". Say "start again". Say "repeat".
 3. Say "finished". AlfieBot should read your letters back and only mark the
    word after you say yes.
@@ -531,7 +595,8 @@ software/
   alfiebot/
     main.py                entry point and command-line options
     config.py              loads config/alfiebot.json over built-in defaults
-    core/                  robot, state machine, states -> expressions, transcript
+    core/                  robot, brain (who answers), actions (checks AI output),
+                           events, state machine, states -> expressions, transcript
     face/                  poses (numbers per expression), engine (animation), renderer (pygame)
     speech/                base.py (interfaces), tts.py (engine choice and fallback,
                            Windows voice, espeak-ng), piper_tts.py (Piper voices),
@@ -542,6 +607,9 @@ software/
                            mic_gate.py keeps the mic deaf while AlfieBot talks,
                            letter_test.py (letter recognition test and report)
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
+    ai/                    provider_base.py (provider interface), mock_provider.py (pretend AI),
+                           router.py (which provider answers, and why), connectivity.py,
+                           performance.py (latency, tokens, errors per provider and machine)
     spelling/              words.py (letters, spoken letter names), letter_input.py (spoken
                            spelling: letters, commands, unsure letters), lists.py (weekly lists),
                            progress.py, tutor.py (add / learn / test), responses.json
@@ -557,7 +625,10 @@ that implements the interface in `speech/base.py`.
 
 ## Privacy
 
-- Everything runs offline. There is no internet chatbot.
+- Everything runs offline. There is no internet chatbot. The AI in
+  version 0.8 is a pretend AI inside the program; the cloud AI switch is
+  off by default, and even when it's on, a child's words are never sent
+  (only an adult test session can use it).
 - The microphone is off until a parent allows it (**Allow mic**, saved as
   `privacy.microphone_enabled`), it only opens while AlfieBot is listening,
   and its status is always shown in the panel.
@@ -566,5 +637,5 @@ that implements the interface in `speech/base.py`.
   espeak-ng) run on the computer, not online. The only downloads are the
   speech model and voices, once, when you run the download tools.
 - The transcript is kept in memory only. Spelling lists and progress are
-  saved as JSON in `data/` on this computer only, and **Delete local data**
+  saved as JSON in `data/` on this computer only, and **Reset all data**
   removes them.

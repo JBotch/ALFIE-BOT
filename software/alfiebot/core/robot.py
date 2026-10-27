@@ -13,6 +13,10 @@ gets a short CELEBRATING bounce before AlfieBot speaks.
 Text that arrives while AlfieBot is thinking or talking is held and handled
 as soon as it is listening again.
 
+AI (V1 Phase 2): replies come from the brain (core/brain.py). Most are
+ready at once; an AI answer is worked out on a background thread while
+AlfieBot stays THINKING, and the robot polls for it each frame.
+
 Microphone (Stage 4): only open while AlfieBot is listening (or, in
 push_to_talk mode, while the button is held), never while it is thinking,
 talking or celebrating, and only if a parent has allowed it in the config.
@@ -25,7 +29,9 @@ import random
 from typing import Callable, List, Optional, Tuple
 
 from alfiebot.conversation.engine import ConversationEngine, Reply
-from alfiebot.conversation.intents import normalise, split_wake_phrase
+from alfiebot.conversation.intents import split_wake_phrase
+from alfiebot.core.brain import Brain, PendingReply
+from alfiebot.core.events import UserInput
 from alfiebot.core.state_machine import StateMachine
 from alfiebot.core.states import TALKING_STATES, Expression, RobotState, expression_for
 from alfiebot.core.transcript import Transcript
@@ -33,8 +39,10 @@ from alfiebot.hardware.base import Platform
 from alfiebot.speech.mic_gate import MicGate
 from alfiebot.spelling.lists import SpellingLists
 from alfiebot.spelling.progress import ProgressTracker
-from alfiebot.spelling.tutor import CHOICES, SpellingTutor
+from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.spelling.letter_input import heard_letters, letter_grammar
+from alfiebot.speech.base import TextToSpeech
+from alfiebot.speech.null import TranscriptOnlyTTS
 from alfiebot.speech.sounds import personality_sounds
 from alfiebot.speech.voice_profiles import get_personality, profile_for_reply
 from alfiebot.storage.json_store import JsonStore
@@ -57,7 +65,8 @@ NEXT_STATE = {
 
 
 class AlfieBot:
-    def __init__(self, config: dict, platform: Platform, conversation: ConversationEngine = None):
+    def __init__(self, config: dict, platform: Platform, conversation: ConversationEngine = None,
+                 brain: Brain = None):
         self.config = config
         self.platform = platform
         self.name = config["robot"]["name"]
@@ -90,6 +99,11 @@ class AlfieBot:
                                    min_confidence=speech.get("min_confidence", 0.75),
                                    confirm_spoken=spelling.get("confirm_spoken_answers", "always"),
                                    phonetic=spelling.get("phonetic_words", "child"))
+        self.brain = brain or Brain(config, self.conversation, self.tutor)
+        self._pending: Optional[PendingReply] = None
+        # Developer panel: voice output off shows replies in the transcript only.
+        self.voice_output = True
+        self._silent_tts = TranscriptOnlyTTS()
         self.letter_grammar = letter_grammar(spelling.get("phonetic_words", "child"))
         self.finish_after_pause = float(spelling.get("finish_after_pause", 5.0))
         self._letters_quiet = 0.0  # seconds since the last spoken letter
@@ -106,6 +120,24 @@ class AlfieBot:
         self._timers: List[Tuple[float, Callable[[], None]]] = []
         self._face_listeners = []
         self.state_machine.add_listener(self._on_state_change)
+
+    @property
+    def tts(self) -> TextToSpeech:
+        return self.platform.tts if self.voice_output else self._silent_tts
+
+    def set_voice_output(self, on: bool) -> None:
+        if on != self.voice_output:
+            self.tts.stop()
+            self.voice_output = on
+            log.info("Voice output %s", "on" if on else "off (transcript only)")
+
+    def _cancel_pending(self) -> None:
+        self.brain.cancel(self._pending)
+        self._pending = None
+
+    def close(self) -> None:
+        self._cancel_pending()
+        self.brain.close()
 
     # ---- face hookup -----------------------------------------------------
     def add_face_listener(self, listener) -> None:
@@ -150,6 +182,7 @@ class AlfieBot:
         if new in LISTENING_STATES:
             self.listen_time_left = self.listen_timeout
         if new in ASLEEP_STATES:
+            self._cancel_pending()
             self.conversation.reset()
             self.tutor.stop()
         self._notify_face()
@@ -159,8 +192,9 @@ class AlfieBot:
         self.expression_override = None
         self._timers.clear()
         self._current_reply = None
+        self._cancel_pending()
         if self.state == RobotState.SPEAKING:
-            self.platform.tts.stop()
+            self.tts.stop()
         if not self.state_machine.set_state(state):
             self._notify_face()
 
@@ -203,7 +237,7 @@ class AlfieBot:
         if not self.running:
             log.warning("Ignored %r: %s is stopped. Press Start first.", text, self.name)
             return
-        if self.state in BUSY_STATES or self._timers:
+        if self.state in BUSY_STATES or self._timers or self._pending:
             # Answer it once AlfieBot has finished talking.
             self._held_text = (text, source, confidence, words)
             log.info("Holding %r until %s has finished talking", text, self.name)
@@ -232,7 +266,7 @@ class AlfieBot:
             self._wake("", by_button=True)
         elif self.state == RobotState.SPEAKING:
             log.info("Button: stop talking and listen")
-            self.platform.tts.stop()
+            self.tts.stop()
             self._finish_speaking(force_listen=True)
         elif self.state in LISTENING_STATES:
             self.listen_time_left = self.listen_timeout
@@ -243,9 +277,10 @@ class AlfieBot:
         if not self.running:
             self.start()
         if self.state in BUSY_STATES:
-            self.platform.tts.stop()
+            self.tts.stop()
         self._timers.clear()
         self._current_reply = None
+        self._cancel_pending()
         reply = self.tutor.start(mode)
         if self.state == RobotState.SLEEPING:
             self.state_machine.set_state(RobotState.IDLE)
@@ -276,13 +311,18 @@ class AlfieBot:
     def _think_then_reply(self, text: str, source: str = "typed", confidence: float = 1.0,
                           words=None) -> None:
         try:
-            reply = self._reply_to(text, source, confidence, words)
+            reply = self.brain.handle(UserInput(text, source, confidence, words))
         except Exception:
             log.exception("Failed to answer %r", text)
             self._error()
             return
+        if isinstance(reply, PendingReply):
+            # The AI is working on it in the background; update() collects it.
+            self._pending = reply
+            self.state_machine.set_state(RobotState.THINKING)
+            return
         if reply is None:
-            # Letters of a spelling: they show on screen; keep listening.
+            # Letters of a spelling: they build up in the tutor; keep listening.
             self._letters_quiet = 0.0
             self.listen_time_left = self.listen_timeout
             return
@@ -298,21 +338,17 @@ class AlfieBot:
         else:
             self._after(self.thinking_time, lambda: self._say(reply))
 
-    def _reply_to(self, text: str, source: str, confidence: float, words=None) -> Optional[Reply]:
-        if self.tutor.active:
-            reply = self.tutor.handle(text, source, confidence, words)
-            if not self.tutor.active:
-                self.conversation.reset()
-            return reply
-        reply = self.conversation.respond(text)
-        if reply.intent in ("spelling_help", "spelling_choice"):
-            norm = normalise(text)
-            choice = reply.detail or next((c for c, p in CHOICES if p.search(norm)), None)
-            if choice:
-                return self.tutor.start(choice, text)
-            self.tutor.start(None)  # menu; keep the conversation's wording
-            reply.then = "spelling_setup"
-        return reply
+    def _collect_ai_reply(self) -> None:
+        reply = self.brain.poll(self._pending)
+        if reply is None:
+            return
+        self._pending = None
+        # Think for at least thinking_time, however fast the answer came.
+        wait = max(0.0, self.thinking_time - self.state_machine.time_in_state)
+        if reply.celebrate:
+            self._after(wait * 0.5, lambda: self._reply(reply))
+        else:
+            self._after(wait, lambda: self._say(reply))
 
     def _say(self, reply: Reply) -> None:
         reply = self._add_cheer(reply)
@@ -322,7 +358,7 @@ class AlfieBot:
         self.state_machine.set_state(RobotState.SPEAKING)
         self._notify_face()  # mood may differ even if already SPEAKING
         self.last_profile = self.profile_for(reply)
-        self.platform.tts.speak(reply.text, self.last_profile)
+        self.tts.speak(reply.text, self.last_profile)
 
     def profile_for(self, reply: Reply) -> str:
         """The voice profile for a reply: fixed in the panel, or chosen by the
@@ -382,7 +418,8 @@ class AlfieBot:
         return "letters" if self.tutor.stage is not None else "conversation"
 
     def spelling_letters(self):
-        """What to show while a child spells: ([(letter, sure)], letters still being heard)."""
+        """For the developer panel (never the robot's face) while a child spells:
+        ([(letter, sure)], letters still being heard)."""
         if self.tutor.stage is None:
             return [], ""
         rec = self.platform.recognizer
@@ -430,7 +467,9 @@ class AlfieBot:
     def update(self, dt: float) -> None:
         self.state_machine.update(dt)
         self.mic_gate.update(dt)
-        self.platform.tts.update(dt)
+        self.tts.update(dt)
+        if self._pending is not None:
+            self._collect_ai_reply()
 
         if self._timers:
             due, waiting = [], []
@@ -442,13 +481,13 @@ class AlfieBot:
                 action()
 
         state = self.state
-        if state == RobotState.SPEAKING and self._current_reply and self.platform.tts.speaking:
+        if state == RobotState.SPEAKING and self._current_reply and self.tts.speaking:
             # Safety net in case a speech engine never reports that it finished.
             limit = 8.0 + 0.15 * len(self._current_reply.text)
             if self.state_machine.time_in_state > limit:
                 log.warning("Speech didn't finish after %.0f s; stopping it", limit)
-                self.platform.tts.stop()
-        if state == RobotState.SPEAKING and not self.platform.tts.speaking and self._current_reply:
+                self.tts.stop()
+        if state == RobotState.SPEAKING and not self.tts.speaking and self._current_reply:
             self._finish_speaking()
         elif state in LISTENING_STATES:
             self.listen_time_left -= dt
