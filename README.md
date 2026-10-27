@@ -6,13 +6,14 @@ V0.1 external design as an editable, parametric Fusion assembly. It uses
 native components, sketches and timeline features, with no meshes and no
 OpenSCAD.
 
-> **Status: not yet run in Fusion.** The script was written without access
-> to Fusion. It passes Python static checks and a mocked run that walks every
-> code path, and the layout maths passes `offline_layout_check.py`. None of
-> that proves the Fusion geometry builds. Run it once, then read
-> `AlfieBot_Validation_Report.txt` (see [CAD_Validation_Checklist.md](CAD_Validation_Checklist.md)).
+> **Status: applied to the live Fusion design, not yet run fresh.** The
+> fastenings (Stage F) and the electronics mock-ups (Stage H) were added to
+> the existing `AlfieBot_V0.1` design in Fusion through the Fusion connector,
+> and checked there (see [CAD_Validation_Checklist.md](CAD_Validation_Checklist.md)).
+> The full generator passes Python static checks and `offline_layout_check.py
+> --flex`, but has not been run from scratch in Fusion.
 
-Visual reference: [`../reference/alfiebot_concept.png`](../reference/alfiebot_concept.png)
+Visual reference: [`alfiebot_concept.png`](alfiebot_concept.png)
 
 ## Files
 
@@ -57,6 +58,7 @@ follow the preference.
    are left alone. It then:
    - adds all user parameters,
    - builds Stages A to E (body, front, speakers, button and feet, rear cover and tray),
+   - builds Stage F, the fastenings: M3 screw bosses, heat-set insert holes and the button retainer (see section 7),
    - applies appearances, grounds `Main_Body` and ties the other parts to it with as-built rigid joints,
    - runs validation and a parameter flex test,
    - writes `AlfieBot_Validation_Report.txt` next to the script (or in your home folder if that isn't writable).
@@ -80,6 +82,7 @@ Options at the top of the script:
 | `CREATE_JOINTS` | `True` | Grounds `Main_Body`; as-built rigid joints for the rest |
 | `RUN_VALIDATION` | `True` | In-Fusion checks |
 | `RUN_PARAMETER_FLEX_TEST` | `True` | Edits five parameters one at a time, checks the timeline, then restores them |
+| `ADD_FASTENINGS_TO_ACTIVE_DESIGN` | `False` | `True` adds only Stage F to an AlfieBot design that is already open (one generated before the fastenings existed). Keeps your parameter values and adds the missing ones. Refuses to run twice |
 
 ## 3. Edit dimensions
 
@@ -150,6 +153,87 @@ lite, or print the cap on its own.
 
 ---
 
+## 7. Fastenings and assembly
+
+Everything except the speaker rings and grilles is held with **M3 socket
+head screws into brass M3 heat-set inserts** (M3 × 5.7 mm long × 4.6 mm OD,
+CNC Kitchen or Ruthex style, in a 4.0 mm hole). Every joint can be undone.
+
+| Joint | Screws | Inserts go in | Screw goes in from |
+|---|---|---|---|
+| Rear_Cover → Main_Body | 4 × M3 × 16 | Main_Body corner bosses, just in front of the split | The rear face, through counterbored bosses in the cover |
+| Front_Bezel → Main_Body and tray | 4 × M3 × 8 | Bosses on the back of the bezel, above and below the display | Inside: the top two through brackets hanging from the top wall, the bottom two through uprights at the front of the tray |
+| Button_Retainer → Main_Body | 2 × M3 × 8 | Bosses under the top wall | Below, through the retainer plate |
+| Feet + Electronics_Tray → Main_Body | 4 × M3 × 10 | Bosses on the tray, above each foot | Underneath, through each foot and the floor |
+| Speaker clamps → Main_Body | 4 × M3 × 8 | Bosses on the side walls, above and below each speaker | Inside, through each clamp plate |
+| Amp_Clamp → Electronics_Tray | 2 × M3 × 8 | Bosses on the tray beside the amplifier cradle | Above, through the clamp tabs |
+| Cable_Clamp → Electronics_Tray | 2 × M3 × 8 | Bosses on the tray either side of the power cable | Above, through the clamp bar |
+| Raspberry Pi 5 → display | 4 × M2.5 (supplied with the display) | Standoffs on the display back | Through the Pi mounting holes |
+| **Total (M3)** | **22 screws, 22 inserts** | | |
+
+How each joint works:
+- **Rear cover.** Each corner boss in Main_Body is braced to the corner by
+  a 45° web. The matching bosses in the cover run from the rear wall to the
+  split and have a 6.2 mm counterbore 13 mm deep, so the screw heads sit
+  below the rear face. The locating tabs still align the cover.
+- **Bezel and display.** The display goes in from the front, then the
+  bezel. The display's edges rest against shelves on the side walls, and
+  the four bezel screws sit above and below the display (X = ±50). The top
+  two go through brackets hanging from the top wall (45° gussets, so no
+  support), and the bottom two through uprights at the front of the tray.
+  The screws pull the bezel back so the display is clamped. Reach the
+  screws from the back with the rear cover off.
+- **Raspberry Pi 5.** The Pi screws onto the four standoffs on the back of
+  the Touch Display 2 (58 × 49 pattern), with the Active Cooler fitted and
+  the USB-C power edge at the top. The ribbon goes straight across to the
+  display connector.
+- **Power.** The 27 W USB-C plug points up into the Pi. The cable loops
+  back over the top, snaps into a clip under the top wall, runs down behind
+  the Pi, lies along the tray under a screwed clamp bar, and drops through
+  a slot in the tray and a notch in the Main_Body floor. It leaves under
+  the body (the feet give 6 mm of room) and comes out at the back below the
+  rear cover. Nothing passes through the rear cover, so the cover comes off
+  with the cable still plugged in, and the clamp takes any pull on the
+  cable before it reaches the Pi.
+- **Microphone.** The USB microphone sits in the lower USB-A port and
+  sticks out towards the left side wall, clear of the speaker magnet.
+- **Speakers.** Each 40 mm speaker's rim seats on the step inside the
+  accent ring. A printed clamp (plate and collar) screws to two side-wall
+  bosses and holds the speaker, the ring and the grille in one go, so the
+  rings and grilles are no longer just a press fit.
+- **Amplifier.** The MAX98357A board sits in a cradle on the tray (ledges
+  and walls) and a printed clamp with two screws holds it down.
+- **Button.** A 12 × 12 × 6 mm tactile switch sits in a 1 mm pocket in the
+  Button_Retainer, with its four legs through holes in the plate. The
+  printed Top_Button cap rests on the switch plunger, 0.5 mm of travel
+  under the flange, and the retainer stops the cap falling in.
+- **Feet and tray.** One screw per foot goes up through the foot's
+  counterbore and the floor into an insert in the tray. It holds the foot
+  and the tray together. To take the tray out, remove the four foot screws.
+
+Assembly order:
+1. Press the heat-set inserts into Main_Body (10), Front_Bezel (4) and
+   Electronics_Tray (8) with a soldering iron and insert tip.
+2. Fit the accent rings and grilles from outside, then each speaker and
+   its clamp from inside.
+3. Put the Top_Button in from inside, solder or plug the switch, seat it in
+   the Button_Retainer pocket, and screw the retainer up into the top bosses.
+4. Screw the Pi 5 (with the Active Cooler) onto the display standoffs and
+   connect the ribbon. Fit the display, then the bezel, from the front.
+   Screw the top two bezel screws in from inside.
+5. Clamp the amplifier on the tray. Slide the Electronics_Tray in from the
+   rear, screw the bottom two bezel screws, then fit the feet and screw
+   them up into the tray.
+6. Plug in the microphone and the USB-C power. Snap the cable into the
+   clip under the top wall, lay it down behind the Pi and along the tray,
+   and slide it into the tray slot and floor notch from the rear so it
+   hangs out under the body. Screw the cable clamp bar down over it, then
+   fit the Rear_Cover and screw it on.
+
+Print notes: inserts go in from the open face of each boss, so every insert
+hole faces up or sideways in the suggested print orientations
+(see [Component_List.md](Component_List.md)).
+
 ## How the generator is built
 
 ### Coordinate system and origins
@@ -179,6 +263,16 @@ lite, or print the cap on its own.
     ├── Rear_Cover                "
     ├── Electronics_Tray          "
     ├── Feet                      "  (4 bodies)
+    ├── Button_Retainer           "  (plate under the button, carries the switch)
+    ├── Left/Right_Speaker_Clamp  "  (printed)
+    ├── Amp_Clamp                 "  (printed)
+    ├── Raspberry_Pi_5            "  (mock-up, with Active Cooler)
+    ├── Left/Right_Speaker        "  (mock-up)
+    ├── I2S_Amplifier             "  (mock-up)
+    ├── Tactile_Switch            "  (mock-up)
+    ├── Cable_Clamp               "  (printed, holds the power cable on the tray)
+    ├── PSU_Plug                  "  (mock-up, with cable)
+    ├── USB_Microphone            "  (mock-up)
     └── Eye_Graphics              joint → Display_Placeholder (visual only)
 ```
 The Fusion root component always takes the document's name, so the named
@@ -211,7 +305,9 @@ The Fusion root component always takes the document's name, so the named
 | C: Speakers | One symmetric cut through both side walls. Ring = tube + inner step + outer lip (3 joins). Grille disc + hole feature + 3 **circular patterns** about an axis from the grille's cylindrical face |
 | D: Button and feet | Button hole cut. Button flange + stem/cap join + top fillet + accent groove cut + accent inlay body. Foot extrude + fillet + **mirror** on X, then on Y = `module_center_y` |
 | E: Rear cover and tray | The same rounded shell, keeping only what is behind `split_y`. Tab roots fused into the wall + 3 locating tabs. Vent slot + **rectangular pattern**. Tray plate + rails + standoff + 2×2 **rectangular pattern** |
-| F: Finish | Appearances, grounding and joints, camera, validation, flex test, report |
+| F: Fastenings | Rear insert bosses with 45° corner webs, bezel brackets with 45° undersides, button insert bosses: joined to Main_Body, then everything outside the enclosure skin is cut away. Insert holes, clearance holes, counterbores. Bezel and tray insert bosses. Button_Retainer plate |
+| H: Electronics | Top display brackets and tray uprights. Mock-ups of the Touch Display 2, the Pi 5 with the Active Cooler, the speakers, the amplifier, the switch, the USB-C plug (pipe cable) and the microphone. Speaker clamps and side bosses, the amp cradle and clamp, the switch pocket and leg holes. The power cable route with its snap clip under the top wall, the screwed cable clamp and bosses on the tray, and the tray slot and floor notch where it leaves |
+| G: Finish | Appearances, grounding and joints, camera, validation, flex test, report |
 
 ### Design decisions you should know about
 - **Overall height** is `foot_height + body_height + button_height` = 141 mm,
@@ -228,20 +324,32 @@ The Fusion root component always takes the document's name, so the named
   ring from going in too far, and an inner step stops the grille.
   Everything is centred in the flat side area in front of the split.
 
-## Known limitations (V0.1)
-- **Retention isn't modelled yet.** The bezel, display, rings, grilles and
-  rear cover locate correctly, but nothing holds them in place yet: no
-  screw bosses, snaps or heat-set inserts. That is planned for V0.2. The
-  concept shows M3 screws and inserts.
-- **Display size is a placeholder** (121 × 76 × 5 mm). Check it against
-  the actual 5" DSI display before you print the bezel.
-- **The Raspberry Pi 5 does not fit flat on the tray** (85 × 56 board on a
-  55.4 mm deep tray). The tray is a placeholder. Prototype 2 should decide
-  how the Pi is mounted. The concept shows it upright, behind the display.
-- **Speaker drivers, the button switch, the microphone, cable channels and
-  the screen mount** are not modelled.
+## Known limitations
+- **Electronics sizes come from published drawings, with some guesses.**
+  The Touch Display 2 outline (143.4 × 91.46), active area and standoff
+  pattern are published; the 6.6 mm panel edge thickness and the standoff
+  position on the back (assumed centred under the board) are not, and
+  should be measured. The 40 mm speaker has no drawing: depth 20, rim
+  2.5 mm and magnet Ø28 are estimates. The USB-C plug and mic sizes are
+  typical values. All are in `ELECTRONICS_PARAMETERS`, so measure and edit.
+- **One MAX98357A is mono.** Two speakers on one amp need wiring in series
+  (2 × 4 Ω = 8 Ω, a little quieter) or a second amp for stereo.
+- **The electronics were added to the existing Fusion design** (25 Oct
+  2026) with `context_for_electronics_upgrade()`, the same steps as Stage
+  H. A full fresh run of this generator has not been done yet. In the
+  upgraded design the bezel bosses had to be rebuilt by hand (the old
+  extrudes kept their old profiles), so if you run the upgrade on another
+  copy, check the bezel bosses sit at X = ±50 above and below the display.
+- **Circle-based bosses and holes do not follow parameter edits in Fusion.**
+  Found on 25 Oct 2026: after a parameter moved them, the sketch circles
+  moved but the extrudes kept their old profiles (bezel bosses, amp and
+  cable clamp bosses, insert and screw holes). Features drawn with
+  rectangles follow correctly. Until `PartBuilder.circles()` is fixed,
+  regenerate (or rebuild those features) after moving a boss or hole.
+- **Cable channels** are not modelled, apart from the power cable route. Leave
+  slack for the speaker, switch and ribbon wires.
 - **Main_Body print orientation.** Printed standing on its rear rim, the
   front rim overhangs reach about 36° from vertical, which is fine. The
-  48 mm side holes and the 22.6 mm button hole are then horizontal holes and
-  need a little support, or a teardrop shape in V0.2.
+  44 mm side holes, the 22.6 mm button hole, the top display brackets and
+  the speaker bosses then need a little support.
 - Eye graphics are extrusions 0.2 mm thick and are for looks only.
