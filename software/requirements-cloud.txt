@@ -1,0 +1,4 @@
+# Optional: online voices to compare against Bubbly Bot (needs the internet).
+# Off unless a parent turns on "Parent: online voice comparison" in the Voice panel.
+-r requirements.txt
+edge-tts>=6.1
