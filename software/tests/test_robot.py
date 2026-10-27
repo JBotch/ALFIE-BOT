@@ -1,3 +1,5 @@
+import tempfile
+
 from alfiebot.config import load_config
 from alfiebot.core.robot import AlfieBot
 from alfiebot.core.states import Expression, RobotState
@@ -6,6 +8,7 @@ from alfiebot.hardware.simulator import create_simulator_platform
 
 def make_robot():
     config = load_config()
+    config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
     robot = AlfieBot(config, create_simulator_platform(config))
     faces = []
     robot.add_face_listener(lambda expr, talking: faces.append((expr, talking)))

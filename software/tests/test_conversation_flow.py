@@ -1,6 +1,7 @@
 """The robot's state machine driven by typed input, with simulated time."""
 
 import random
+import tempfile
 
 from alfiebot.config import load_config
 from alfiebot.conversation.engine import ConversationEngine
@@ -12,6 +13,7 @@ from alfiebot.hardware.simulator import create_simulator_platform
 def make_robot(**timing):
     config = load_config()
     config["conversation"].update(timing)
+    config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
     robot = AlfieBot(config, create_simulator_platform(config),
                      ConversationEngine("AlfieBot", rng=random.Random(0)))
     states = []
@@ -140,7 +142,10 @@ def test_spelling_request_enters_spelling_setup():
     assert robot.expression == Expression.LISTENING
     say(robot, "take a test")
     finish_talking(robot)
-    assert robot.state == RobotState.LISTENING
+    # No spellings saved yet, so AlfieBot offers to add some.
+    assert "add" in robot_lines(robot)[-1].lower()
+    assert robot.state == RobotState.SPELLING_SETUP
+    assert robot.tutor.active
 
 
 def test_goodbye_goes_to_sleep():
@@ -204,3 +209,75 @@ def test_stop_while_talking():
     assert robot.state == RobotState.SLEEPING
     tick(robot, 5)
     assert robot.state == RobotState.SLEEPING
+
+
+def setup_words(robot, *words):
+    robot.spelling_lists.add_words(robot.tutor.active_week, list(words))
+
+
+def test_spelling_practice_by_conversation():
+    robot, states = make_robot()
+    setup_words(robot, "because", "friend")
+    robot.start()
+    say(robot, "Hey AlfieBot")
+    finish_talking(robot)
+    say(robot, "Help me with my spellings")
+    finish_talking(robot)
+    assert "add" in robot_lines(robot)[-1] and "test" in robot_lines(robot)[-1]
+    assert robot.state == RobotState.SPELLING_SETUP
+    say(robot, "practise them")
+    finish_talking(robot)
+    assert robot.state == RobotState.SPELLING_PRACTICE
+    assert "B-E-C-A-U-S-E" in robot_lines(robot)[-1]
+    say(robot, "because")
+    tick(robot, 0.6)
+    assert robot.state == RobotState.CELEBRATING
+    assert robot.expression == Expression.EXCITED
+    finish_talking(robot)
+    assert robot.state == RobotState.SPELLING_PRACTICE
+    say(robot, "stop")
+    finish_talking(robot)
+    assert robot.state == RobotState.LISTENING
+    assert not robot.tutor.active
+    say(robot, "how are you")  # back to normal chat
+    finish_talking(robot)
+    assert robot.conversation.last_reply.intent == "how_are_you"
+
+
+def test_spelling_test_from_panel_and_progress_saved():
+    robot, _ = make_robot()
+    setup_words(robot, "because", "friend")
+    robot.start_spelling("test")
+    tick(robot, 1.5)
+    finish_talking(robot)
+    assert robot.state == RobotState.SPELLING_TEST
+    assert robot.expression == Expression.LISTENING
+    while robot.tutor.mode == "test":
+        say(robot, robot.tutor.current_word)
+        finish_talking(robot)
+    assert robot.progress.sessions()[-1]["score"] == 2
+    assert robot.state == RobotState.LISTENING
+
+
+def test_add_word_without_saying_spellings():
+    robot, _ = make_robot()
+    robot.start()
+    say(robot, "Hey AlfieBot, add the word because")
+    finish_talking(robot)
+    assert "B-E-C-A-U-S-E. Is that correct?" in robot_lines(robot)[-1]
+    say(robot, "yes")
+    finish_talking(robot)
+    assert robot.spelling_lists.load(robot.tutor.active_week).words == ["because"]
+
+
+def test_going_idle_ends_the_spelling_activity():
+    robot, _ = make_robot(listen_timeout=2.0)
+    setup_words(robot, "because")
+    robot.start_spelling("practice")
+    finish_talking(robot)
+    tick(robot, 1.5)
+    finish_talking(robot)
+    assert robot.tutor.active
+    tick(robot, 2.5)
+    assert robot.state == RobotState.IDLE
+    assert not robot.tutor.active

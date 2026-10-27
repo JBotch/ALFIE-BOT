@@ -3,17 +3,16 @@ control panel. F11 shows the face alone, full screen."""
 
 import logging
 import time
-from pathlib import Path
 
 import pygame
 
 from alfiebot import __version__
 from alfiebot.core.robot import AlfieBot
 from alfiebot.core.states import Expression, RobotState
-from alfiebot.storage.json_store import JsonStore
 from alfiebot.ui import widgets as w
 from alfiebot.ui.face_view import FaceView
 from alfiebot.ui.log_capture import MemoryLogHandler
+from alfiebot.ui.spelling_panel import SpellingPanel
 
 log = logging.getLogger(__name__)
 
@@ -26,7 +25,6 @@ STATE_LABELS = {
     RobotState.CELEBRATING: "CELEBRATE", RobotState.ERROR: "ERROR",
 }
 QUICK_PHRASES = ("Hey AlfieBot", "I'm good", "How are you?", "Tell me a joke")
-EXAMPLE_LIST = Path(__file__).resolve().parents[2] / "examples" / "spelling_list_example.json"
 
 
 class SimulatorApp:
@@ -37,7 +35,7 @@ class SimulatorApp:
         sim = config["simulator"]
         self.window_size = (sim["window_width"], sim["window_height"])
         self.fps = config["display"]["fps"]
-        self.store = JsonStore(config["data_dir"])
+        self.store = robot.store
         self.face_fullscreen = False
         self.mic_requested = False
         self._delete_armed_until = 0.0
@@ -114,11 +112,17 @@ class SimulatorApp:
             add((px + i * (bw + 6), y + 62, bw, 26), phrase,
                 (lambda p=phrase: self._submit_text(p)), size=15)
 
-        # Spelling homework (Stage 3).
+        # Spelling homework.
         y = 508
         self.y_spelling = y
-        for i, label in enumerate(("Add words", "Practise", "Test")):
-            add((px + i * 104, y + 48, 96, 27), label, enabled=False, size=16)
+        bw = (inner - 3 * 6) // 4
+        for i, (label, action) in enumerate((
+                ("Lists", lambda: self.spelling.toggle("lists")),
+                ("Add by voice", lambda: self.robot.start_spelling("add")),
+                ("Practise", lambda: self.robot.start_spelling("practice")),
+                ("Test", lambda: self.robot.start_spelling("test")))):
+            add((px + i * (bw + 6), y + 48, bw, 27), label, action, size=16)
+        self.spelling = SpellingPanel(self.robot, (12, 12, self.bezel.width, H - 24))
 
         # Parent area.
         y = 594
@@ -155,6 +159,7 @@ class SimulatorApp:
             return
         self._delete_armed_until = 0.0
         self.store.delete_all()
+        self.robot.progress.reload()
         self.robot.transcript.clear()
 
     def _toggle_face_fullscreen(self):
@@ -204,6 +209,11 @@ class SimulatorApp:
                 self.robot.show_expression(EXPRESSION_KEYS[event.key])
             return
         if self.text_input.handle(event):
+            self.spelling.input.focused = False
+            return
+        if self.spelling.handle(event):
+            if self.spelling.input.focused and self.text_input.focused:
+                self.text_input.focused = False
             return
         for view in (self.transcript_view, self.debug_view):
             if view.handle(event):
@@ -240,6 +250,7 @@ class SimulatorApp:
         self._draw_transcript()
         self._draw_debug()
         self._draw_panel(mouse, dt)
+        self.spelling.draw(s, mouse, dt)
 
     def _draw_transcript(self):
         colours = {"user": w.TEXT, "robot": w.ACCENT, "system": w.TEXT_DIM}
@@ -284,7 +295,8 @@ class SimulatorApp:
             face_text += " (preview)"
         if robot.talking:
             face_text += ", talking"
-        w.draw_text(s, f"Face: {face_text}", (px + 200, self.y_status), w.TEXT, 20)
+        face_img = w.font(20).render(f"Face: {face_text}", True, w.TEXT)
+        s.blit(face_img, (self.panel.right - 12 - face_img.get_width(), self.y_status))
         w.draw_text(s, "Set state (drives the face)", (px, 120), w.ACCENT, 18)
         for state, b in self.state_buttons.items():
             b.selected = state == robot.state
@@ -317,11 +329,13 @@ class SimulatorApp:
         self.text_input.draw(s, dt)
 
         self._section(self.y_spelling, "Spelling homework")
-        saved = self.store.list("spellings")
-        example = self._example_summary()
-        w.draw_text(s, f"Saved lists: {len(saved) if saved else 'none yet'}.  {example}",
-                    (px, self.y_spelling + 24), w.TEXT_DIM, 16, max_width=inner)
-        w.draw_text(s, "Stage 3", (px + 320, self.y_spelling + 54), w.TEXT_DIM, 16)
+        tutor = robot.tutor
+        if tutor.active:
+            status = tutor.status()
+        else:
+            count = len(robot.spelling_lists.load(tutor.active_week).words)
+            status = f"List {tutor.active_week}: {count} word{'s' if count != 1 else ''}"
+        w.draw_text(s, status, (px, self.y_spelling + 24), w.TEXT_DIM, 16, max_width=inner)
 
         self._section(self.y_parent, "Parent settings")
         privacy = self.config["privacy"]
@@ -337,11 +351,3 @@ class SimulatorApp:
         w.draw_text(s, "Space = robot button   T or Enter = type   1-7 faces   F11 full-screen face",
                     (px, self.panel.bottom - 22), w.TEXT_DIM, 15, max_width=inner)
 
-    _example_cache = None
-
-    def _example_summary(self):
-        if self._example_cache is None:
-            data = JsonStore(EXAMPLE_LIST.parent).load(EXAMPLE_LIST.stem, {})
-            words = data.get("words", [])
-            self._example_cache = f"Example list: {len(words)} words." if words else ""
-        return self._example_cache

@@ -6,6 +6,10 @@ Conversation flow (Stage 2):
     SPEAKING --finished--> LISTENING --text--> THINKING --> SPEAKING --> LISTENING
     LISTENING --no answer for listen_timeout--> IDLE --sleep_after_idle--> SLEEPING
 
+Spelling (Stage 3): "help me with my spellings" (or the panel) hands the
+conversation to the spelling tutor until the activity ends. A correct answer
+gets a short CELEBRATING bounce before AlfieBot speaks.
+
 Text that arrives while AlfieBot is thinking or talking is held and handled
 as soon as it is listening again. The microphone gate is closed whenever
 AlfieBot talks, so it can't answer its own voice.
@@ -15,21 +19,29 @@ import logging
 from typing import Callable, List, Optional, Tuple
 
 from alfiebot.conversation.engine import ConversationEngine, Reply
-from alfiebot.conversation.intents import split_wake_phrase
+from alfiebot.conversation.intents import normalise, split_wake_phrase
 from alfiebot.core.state_machine import StateMachine
 from alfiebot.core.states import TALKING_STATES, Expression, RobotState, expression_for
 from alfiebot.core.transcript import Transcript
 from alfiebot.hardware.base import Platform
 from alfiebot.speech.mic_gate import MicGate
+from alfiebot.spelling.lists import SpellingLists
+from alfiebot.spelling.progress import ProgressTracker
+from alfiebot.spelling.tutor import CHOICES, SpellingTutor
+from alfiebot.storage.json_store import JsonStore
 
 log = logging.getLogger(__name__)
 
-LISTENING_STATES = {RobotState.LISTENING, RobotState.SPELLING_SETUP}
+LISTENING_STATES = {RobotState.LISTENING, RobotState.SPELLING_SETUP,
+                    RobotState.SPELLING_PRACTICE, RobotState.SPELLING_TEST}
 ASLEEP_STATES = {RobotState.SLEEPING, RobotState.IDLE}
-BUSY_STATES = {RobotState.THINKING, RobotState.SPEAKING}
+BUSY_STATES = {RobotState.THINKING, RobotState.SPEAKING, RobotState.CELEBRATING, RobotState.ERROR}
+CELEBRATE_SECONDS = 1.3
 NEXT_STATE = {
     "listen": RobotState.LISTENING,
     "spelling_setup": RobotState.SPELLING_SETUP,
+    "spelling_practice": RobotState.SPELLING_PRACTICE,
+    "spelling_test": RobotState.SPELLING_TEST,
     "idle": RobotState.IDLE,
     "sleep": RobotState.SLEEPING,
 }
@@ -50,13 +62,17 @@ class AlfieBot:
         self.conversation = conversation or ConversationEngine(self.name)
         self.transcript = Transcript()
         self.mic_gate = MicGate()
+        self.store = JsonStore(config["data_dir"])
+        self.spelling_lists = SpellingLists(self.store)
+        self.progress = ProgressTracker(self.store)
+        self.tutor = SpellingTutor(self.spelling_lists, self.progress)
         self.running = False
         # Developer override: show an expression regardless of state.
         self.expression_override = None
         self.listen_time_left = 0.0
         self._speaking_mood = Expression.HAPPY
         self._current_reply: Optional[Reply] = None
-        self._held_text: Optional[Tuple[str, str]] = None
+        self._held_text: Optional[Tuple[str, str, float]] = None
         self._timers: List[Tuple[float, Callable[[], None]]] = []
         self._face_listeners = []
         self.state_machine.add_listener(self._on_state_change)
@@ -93,6 +109,7 @@ class AlfieBot:
             self.listen_time_left = self.listen_timeout
         if new in ASLEEP_STATES:
             self.conversation.reset()
+            self.tutor.stop()
         self._notify_face()
 
     def set_state(self, state: RobotState) -> None:
@@ -131,8 +148,12 @@ class AlfieBot:
         self.set_state(RobotState.SLEEPING)
 
     # ---- input -----------------------------------------------------------
-    def handle_text(self, text: str, source: str = "typed") -> None:
-        """Text from the keyboard (simulated speech) or a recogniser."""
+    def handle_text(self, text: str, source: str = "typed", confidence: float = 1.0) -> None:
+        """Text from the keyboard (simulated speech) or a recogniser.
+
+        ``confidence`` (0..1) comes from the recogniser; the spelling tutor
+        double-checks answers it wasn't sure about.
+        """
         text = text.strip()
         if not text:
             return
@@ -141,7 +162,7 @@ class AlfieBot:
             return
         if self.state in BUSY_STATES or self._timers:
             # Answer it once AlfieBot has finished talking.
-            self._held_text = (text, source)
+            self._held_text = (text, source, confidence)
             log.info("Holding %r until %s has finished talking", text, self.name)
             return
         self.transcript.add("user", text, source)
@@ -153,11 +174,11 @@ class AlfieBot:
                 self.transcript.add("system", f"{self.name} is not listening. "
                                     f"Start with \"Hey {self.name}\" or press the button.")
                 return
-            self._wake(rest)
+            self._wake(rest, source=source, confidence=confidence)
         elif woke and not rest:
             self._say(self.conversation.acknowledge("wake_again"))
         else:
-            self._think_then_reply(rest if woke else text)
+            self._think_then_reply(rest if woke else text, source, confidence)
 
     def press_button(self) -> None:
         """The robot's button: wake up, skip the current speech, or keep listening."""
@@ -173,12 +194,28 @@ class AlfieBot:
             self.listen_time_left = self.listen_timeout
 
     # ---- conversation flow ----------------------------------------------
-    def _wake(self, rest: str, by_button: bool = False) -> None:
+    def start_spelling(self, mode: Optional[str]) -> None:
+        """Developer panel: start "add", "practice", "test" or (None) the menu."""
+        if not self.running:
+            self.start()
+        if self.state in BUSY_STATES:
+            self.platform.tts.stop()
+        self._timers.clear()
+        self._current_reply = None
+        reply = self.tutor.start(mode)
+        if self.state == RobotState.SLEEPING:
+            self.state_machine.set_state(RobotState.IDLE)
+            self._after(self.wake_delay, lambda: self._say(reply))
+        else:
+            self._say(reply)
+
+    def _wake(self, rest: str, by_button: bool = False, source: str = "typed",
+              confidence: float = 1.0) -> None:
         log.info("Wake %s", "button pressed" if by_button else "phrase heard (typed)")
 
         def respond():
             if rest:
-                self._think_then_reply(rest)
+                self._think_then_reply(rest, source, confidence)
             elif by_button:
                 self._say(self.conversation.acknowledge("button"))
             else:
@@ -191,15 +228,37 @@ class AlfieBot:
         else:
             respond()
 
-    def _think_then_reply(self, text: str) -> None:
+    def _think_then_reply(self, text: str, source: str = "typed", confidence: float = 1.0) -> None:
         self.state_machine.set_state(RobotState.THINKING)
         try:
-            reply = self.conversation.respond(text)
+            reply = self._reply_to(text, source, confidence)
         except Exception:
-            log.exception("Conversation engine failed on %r", text)
+            log.exception("Failed to answer %r", text)
             self._error()
             return
-        self._after(self.thinking_time, lambda: self._say(reply))
+        if reply.celebrate:
+            def celebrate():
+                self.state_machine.set_state(RobotState.CELEBRATING)
+                self._after(CELEBRATE_SECONDS, lambda: self._say(reply))
+            self._after(self.thinking_time * 0.5, celebrate)
+        else:
+            self._after(self.thinking_time, lambda: self._say(reply))
+
+    def _reply_to(self, text: str, source: str, confidence: float) -> Reply:
+        if self.tutor.active:
+            reply = self.tutor.handle(text, source, confidence)
+            if not self.tutor.active:
+                self.conversation.reset()
+            return reply
+        reply = self.conversation.respond(text)
+        if reply.intent in ("spelling_help", "spelling_choice"):
+            norm = normalise(text)
+            choice = reply.detail or next((c for c, p in CHOICES if p.search(norm)), None)
+            if choice:
+                return self.tutor.start(choice, text)
+            self.tutor.start(None)  # menu; keep the conversation's wording
+            reply.then = "spelling_setup"
+        return reply
 
     def _say(self, reply: Reply) -> None:
         self._current_reply = reply
@@ -215,9 +274,9 @@ class AlfieBot:
         then = "listen" if force_listen or reply is None else reply.then
         self.state_machine.set_state(NEXT_STATE.get(then, RobotState.LISTENING))
         if self._held_text and self.state in LISTENING_STATES:
-            text, source = self._held_text
+            text, source, confidence = self._held_text
             self._held_text = None
-            self.handle_text(text, source)
+            self.handle_text(text, source, confidence)
 
     def _error(self) -> None:
         self._timers.clear()

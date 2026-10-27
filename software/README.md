@@ -4,12 +4,50 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.2, Stage 2 of 5: typed conversation and state transitions.**
+**Version 0.3, Stage 3 of 5: the spelling homework tutor.**
 
-> Tested on Linux with Python 3.13 and pygame 2.6.1 (121 automated tests,
-> plus headless launches of both apps). Stage 1 also ran on Windows 11 with
-> Python 3.13. **It has not been run on Raspberry Pi hardware yet.** The
+> Tested on Linux with Python 3.13 and pygame 2.6.1 (156 automated tests,
+> plus headless launches of both apps). Stages 1 and 2 also ran on Windows 11
+> with Python 3.13. **It has not been run on Raspberry Pi hardware yet.** The
 > Pi-specific code (GPIO button) is written but untested.
+
+## What Stage 3 adds
+
+- **Weekly spelling lists**, saved in `data/spellings/<week>.json` (for
+  example `2026-W44.json`). Click **Lists** in the panel to see a week's
+  words, flick between weeks with `<` `>`, and type new words (commas or
+  spaces between them). Typed words are shown first as green chips to check;
+  click one to fix it, then **Save**. Anything that isn't plain letters is
+  left out and shown in red. Click a saved word to remove or correct it.
+  **Load example list** adds the 10 example words.
+- **Adding words by voice** (typed for now): "Add the word because" ->
+  "Because. B-E-C-A-U-S-E. Is that correct?" -> "yes" saves it, "no" asks
+  you to spell it letter by letter. Say "finished" when done.
+- **Learning mode** ("practise"): for each word AlfieBot says it, spells it
+  letter by letter and asks you to try. You can say *repeat that*, *spell it
+  slower*, *give me a clue* (up to three clues), *next word*, *start again*
+  or *stop*. A right answer gets a celebration and moves on; a wrong one gets
+  encouragement and another go (after three tries it moves on and marks the
+  word for more practice).
+- **Test mode**: the words in a random order, said but not spelled (the
+  Lists window hides them during a test). Type the answer, or letters like
+  "b e c a u s e". Each answer gets supportive feedback with the right
+  spelling, then the next word. At the end: your score, which words to
+  practise again, and an offer to practise them straight away. *Say it again*
+  repeats the word; *I don't know* or *skip* moves on.
+- **Spoken answers are double-checked.** Letter names ("bee ee see ...",
+  "double s") are understood. If the recogniser was unsure, or it heard a
+  whole word instead of letters, AlfieBot asks "I heard B-E-C-A-U-S-E. Is
+  that what you meant?" before marking it, so a mishearing is never marked
+  wrong. (This is ready for Stage 4's microphone and tested with simulated
+  voice input.)
+- **Progress** in `data/progress.json`: attempts, right and wrong answers,
+  date of practice and each answer for every word, plus each finished
+  practice or test. The **Progress** tab shows it, with "practise again" on
+  words that were never right or were wrong last time.
+- The panel's **Add by voice**, **Practise** and **Test** buttons start each
+  activity directly. Everything AlfieBot says in the tutor is in
+  `alfiebot/spelling/responses.json`.
 
 ## What Stage 2 adds
 
@@ -23,8 +61,8 @@ Raspberry Pi 5.
 - Deterministic intents: how are you, what can you do, jokes, name, who made
   you, age, thanks, hello, goodbye (goes to sleep), never mind, say that
   again, "I'm good" / "I'm sad" (offers a joke and suggests telling a
-  grown-up), and "help me with my spellings" (asks add / practise / test;
-  the tutor itself arrives in Stage 3). Anything else gets a clear "I don't
+  grown-up), and "help me with my spellings" (asks add / practise / test).
+  Anything else gets a clear "I don't
   know how to do that yet" with a confused face.
 - Several replies per intent, never the same one twice in a row. They're in
   `alfiebot/conversation/responses.json`, so you can edit what AlfieBot says.
@@ -53,7 +91,7 @@ Raspberry Pi 5.
   push-to-talk button, transcript, debug log, spelling area (Stage 3) and a
   parent area with **Delete local data**.
 
-Not built yet, on purpose: spelling tutor (Stage 3), speech output and microphone (Stage 4), wake word and Pi hardware
+Not built yet, on purpose: speech output and microphone (Stage 4), wake word and Pi hardware
 (Stage 5). The microphone status says "Off" and the wake word says "not
 configured" because none exists yet. Nothing pretends otherwise.
 
@@ -128,10 +166,27 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel or Space | Robot button | Wakes AlfieBot, interrupts it to listen, or keeps it listening. Real push-to-talk arrives in Stage 4 |
 | Panel, T or Enter | Simulated speech | Type what you would say, or click a quick phrase |
 | Panel or F11 | Face full screen | Face only; F11 or Esc returns |
-| Panel | Delete local data | Click twice to delete the `data/` folder |
+| Panel | Lists / Add by voice / Practise / Test | Spelling lists and progress window, or start an activity |
+| Panel | Delete local data | Click twice to delete the `data/` folder (spelling lists and progress) |
 | Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
 
-## What to test before Stage 3
+## What to test before Stage 4
+
+1. Open **Lists**, click **Load example list** (or type your own week's
+   words), check them and save. Close the window.
+2. Wake AlfieBot and say "help me with my spellings", then "practise".
+   Try a right answer, a wrong one, *give me a clue*, *spell it slower*,
+   *repeat that*, *next word* and *start again*.
+3. Click **Test** and do a whole test with a few mistakes. Check the score,
+   the practise-again suggestion, and that **Lists** hides the words during
+   the test.
+4. Open **Progress** and check the attempts, dates and sessions look right.
+5. Add a word by voice: "add the word because", then "no", then spell it.
+6. **Delete local data** (click twice) should clear lists and progress.
+7. Read `spelling/responses.json` with Alfie and change anything that
+   doesn't sound right.
+
+## Stage 2 checks
 
 1. Press Start, then type "Hey AlfieBot". The eyes open, AlfieBot greets you
    (excited face, moving mouth), then listens. The state line counts down.
@@ -183,7 +238,8 @@ software/
     speech/                recogniser, text-to-speech and wake-word interfaces;
                            mic_gate.py keeps the mic deaf while AlfieBot talks
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
-    spelling/              Stage 3: lists, learning mode, test mode, progress
+    spelling/              words.py (letters, spoken letter names), lists.py (weekly lists),
+                           progress.py, tutor.py (add / learn / test), responses.json
     hardware/              simulator vs Raspberry Pi (button), auto-detected
     storage/               local JSON files (atomic writes, delete all)
     ui/                    simulator window, widgets and face-only app
@@ -200,5 +256,6 @@ that implements the interface in `speech/base.py`.
 - The microphone is off by default (`privacy.microphone_enabled` in the
   config) and its status is always shown in the panel.
 - Audio is never saved (`privacy.keep_audio_recordings` is false).
-- The transcript is kept in memory only. Spelling data (from Stage 3) is
-  saved as JSON in `data/`, which **Delete local data** removes.
+- The transcript is kept in memory only. Spelling lists and progress are
+  saved as JSON in `data/` on this computer only, and **Delete local data**
+  removes them.

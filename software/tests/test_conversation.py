@@ -60,8 +60,7 @@ def test_spelling_help_flow():
     assert r.then == "spelling_setup"
     assert e.expecting == "spelling_choice"
     r = e.respond("practise them")
-    assert r.intent == "spelling_choice" and r.detail == "practise"
-    assert "next update" in r.text  # honest: the tutor arrives in Stage 3
+    assert r.intent == "spelling_choice" and r.detail == "practise"  # handed to the tutor
 
 
 def test_feeling_bad_offers_joke():

@@ -43,7 +43,8 @@ def _any(*patterns):
 
 # Ordered: earlier intents win.
 GENERAL_INTENTS = [
-    ("spelling_help", _any(r"\bspell(ing|ings|s)?\b", r"\bhomework\b")),
+    ("spelling_help", _any(r"\bspell(ing|ings|s)?\b", r"\bhomework\b",
+                           r"^(please )?(can you )?(add|put|save)( the)? word\b")),
     ("goodbye", _any(r"\b(good ?bye|bye|see you|go to sleep|good ?night|night night)\b")),
     ("stop", _any(r"^(stop|cancel|never ?mind|nothing|be quiet|shush|shh+)\b")),
     ("how_are_you", _any(r"\bhow (are|r) (you|u)\b", r"\bhow( a)?re you (doing|feeling)\b",

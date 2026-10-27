@@ -80,7 +80,7 @@
   },
   "age": {
     "mood": "happy",
-    "replies": ["I was built this year, so I'm still a very new robot!", "I'm brand new! My software is only version 0.2."]
+    "replies": ["I was built this year, so I'm still a very new robot!", "I'm brand new! My software is only version 0.3."]
   },
   "thanks": {
     "mood": "happy",
@@ -108,18 +108,6 @@
       "I'd love to help! Shall we add this week's spellings, practise them or take a test?",
       "Spelling time! Would you like to add this week's spellings, practise them or take a test?"
     ]
-  },
-  "spelling_choice": {
-    "mood": "confused",
-    "replies": [
-      "I'm still learning how to do that! The spelling tutor arrives in my next update.",
-      "Ooh, that part of me isn't built yet. The spelling tutor is coming in my next update!"
-    ]
-  },
-  "spelling_unclear": {
-    "mood": "confused",
-    "then": "spelling_setup",
-    "replies": ["Sorry, would you like to add spellings, practise them or take a test?", "Hmm, shall we add words, practise or do a test?"]
   },
   "joke_yes": {
     "mood": "excited",

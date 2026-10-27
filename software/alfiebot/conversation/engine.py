@@ -24,7 +24,6 @@ EXPECTS = {
     "wake": "feeling",
     "feeling_bad": "joke_offer",
     "spelling_help": "spelling_choice",
-    "spelling_unclear": "spelling_choice",
 }
 
 
@@ -36,6 +35,8 @@ class Reply:
     # What happens after speaking: "listen", "idle", "sleep" or "spelling_setup".
     then: str = "listen"
     detail: Optional[str] = None
+    # Bounce with excitement (CELEBRATING) before saying this.
+    celebrate: bool = False
 
 
 def load_responses(path=RESPONSES_PATH) -> dict:
