@@ -1,0 +1,140 @@
+{
+  "_comment": "AlfieBot's replies. Each intent has a face (mood) and several replies; one is picked at random, never the same one twice in a row. {name} is replaced with the robot's name. Replies are scripted, so they describe AlfieBot as a robot rather than claiming real feelings.",
+  "wake": {
+    "mood": "excited",
+    "replies": [
+      "Hey! How are you today?",
+      "Hello there! How are you today?",
+      "Hi! It's good to see you. How are you today?",
+      "Beep boop, hello! How are you today?"
+    ]
+  },
+  "wake_again": {
+    "mood": "listening",
+    "replies": ["Yes? I'm listening!", "I'm here! What would you like?", "Go on, I'm all ears. Well, all microphone!"]
+  },
+  "button": {
+    "mood": "listening",
+    "replies": ["Yes? I'm listening!", "Hello! What shall we do?", "I'm awake! What would you like?"]
+  },
+  "feeling_good": {
+    "mood": "happy",
+    "replies": [
+      "That's brilliant! What shall we do today?",
+      "Hooray! That's great to hear. What shall we do today?",
+      "Awesome! What would you like to do today?",
+      "Brilliant! My lights just got a bit brighter. What shall we do today?"
+    ]
+  },
+  "feeling_bad": {
+    "mood": "listening",
+    "replies": [
+      "Oh no, I'm sorry you're not feeling great. It might help to tell a grown-up how you feel. Would you like a joke to cheer you up?",
+      "Sorry to hear that. Talking to a grown-up you trust can really help. Shall I tell you a joke?",
+      "Oh dear. Everyone has days like that. Would a silly joke help?"
+    ]
+  },
+  "how_are_you": {
+    "mood": "happy",
+    "replies": [
+      "I'm feeling fantastic! My circuits are ready for an adventure!",
+      "All my systems are running smoothly, thanks for asking!",
+      "My batteries are charged and my eyes are shiny. Ready for fun!",
+      "Beep beep, everything's working perfectly. Thanks for asking!"
+    ]
+  },
+  "what_can_you_do": {
+    "mood": "happy",
+    "replies": [
+      "I can chat, tell jokes and help you practise your spellings!",
+      "I can have a chat, tell you a joke, or help with your spellings!",
+      "Lots of things! I can chat, tell jokes and help you learn your spellings."
+    ]
+  },
+  "joke": {
+    "mood": "excited",
+    "replies": [
+      "Why did the robot go on holiday? To recharge its batteries!",
+      "What do you call a pirate robot? Arrrr2-D2!",
+      "Why was the maths book sad? It had too many problems!",
+      "What do you call a dinosaur that's asleep? A dino-snore!",
+      "Why did the cookie go to the doctor? It was feeling crummy!",
+      "What's a robot's favourite snack? Computer chips!",
+      "Why can't a bicycle stand up on its own? Because it's two tired!",
+      "What do you call a sleeping bull? A bulldozer!",
+      "How does the moon cut its hair? Eclipse it!",
+      "Why don't skeletons fight each other? They don't have the guts!"
+    ]
+  },
+  "name": {
+    "mood": "happy",
+    "replies": ["I'm {name}! Nice to meet you.", "My name is {name}. Beep boop!", "I'm {name}, your robot buddy!"]
+  },
+  "who_made_you": {
+    "mood": "happy",
+    "replies": [
+      "I was designed and 3D printed by Alfie and his dad!",
+      "Alfie and his dad built me, one layer of plastic at a time!",
+      "Alfie and his dad made me. They're brilliant engineers!"
+    ]
+  },
+  "age": {
+    "mood": "happy",
+    "replies": ["I was built this year, so I'm still a very new robot!", "I'm brand new! My software is only version 0.6."]
+  },
+  "thanks": {
+    "mood": "happy",
+    "replies": ["You're welcome!", "Any time!", "No problem at all!", "Happy to help!"]
+  },
+  "hello": {
+    "mood": "happy",
+    "replies": ["Hello again!", "Hi there!", "Hey! What shall we do?"]
+  },
+  "goodbye": {
+    "mood": "happy",
+    "then": "sleep",
+    "replies": ["Bye for now! Say Hey AlfieBot when you need me.", "See you later! I'll have a little nap.", "Goodbye! Time for a robot snooze."]
+  },
+  "stop": {
+    "mood": "idle",
+    "then": "idle",
+    "replies": ["Okay! Just say Hey AlfieBot when you need me.", "No problem. I'll be right here.", "Okay, I'll wait here."]
+  },
+  "spelling_help": {
+    "mood": "happy",
+    "then": "spelling_setup",
+    "replies": [
+      "Of course! Would you like to add this week's spellings, practise them or take a test?",
+      "I'd love to help! Shall we add this week's spellings, practise them or take a test?",
+      "Spelling time! Would you like to add this week's spellings, practise them or take a test?"
+    ]
+  },
+  "joke_yes": {
+    "mood": "excited",
+    "use": "joke"
+  },
+  "joke_no": {
+    "mood": "happy",
+    "replies": ["Okay! What would you like to do instead?", "No problem. What shall we do?"]
+  },
+  "repeat": {
+    "mood": "listening",
+    "replies": []
+  },
+  "nothing_to_repeat": {
+    "mood": "confused",
+    "replies": ["I haven't said anything yet!"]
+  },
+  "fallback": {
+    "mood": "confused",
+    "replies": [
+      "Hmm, I don't know how to do that yet. You can ask me how I am, ask for a joke, or ask for help with your spellings.",
+      "Sorry, I didn't understand that. Try asking me for a joke, or say help me with my spellings.",
+      "My circuits are puzzled! I can chat, tell jokes and help with spellings. What would you like?"
+    ]
+  },
+  "error": {
+    "mood": "confused",
+    "replies": ["Oops! My circuits got in a muddle. Can you try that again?"]
+  }
+}
