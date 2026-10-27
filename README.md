@@ -12,7 +12,7 @@ OpenSCAD.
 > that proves the Fusion geometry builds. Run it once, then read
 > `AlfieBot_Validation_Report.txt` (see [CAD_Validation_Checklist.md](CAD_Validation_Checklist.md)).
 
-Visual reference: [`../reference/alfiebot_concept.png`](../reference/alfiebot_concept.png)
+Visual reference: [`alfiebot_concept.png`](alfiebot_concept.png)
 
 ## Files
 
@@ -57,6 +57,7 @@ follow the preference.
    are left alone. It then:
    - adds all user parameters,
    - builds Stages A to E (body, front, speakers, button and feet, rear cover and tray),
+   - builds Stage F, the fastenings: M3 screw bosses, heat-set insert holes and the button retainer (see section 7),
    - applies appearances, grounds `Main_Body` and ties the other parts to it with as-built rigid joints,
    - runs validation and a parameter flex test,
    - writes `AlfieBot_Validation_Report.txt` next to the script (or in your home folder if that isn't writable).
@@ -80,6 +81,7 @@ Options at the top of the script:
 | `CREATE_JOINTS` | `True` | Grounds `Main_Body`; as-built rigid joints for the rest |
 | `RUN_VALIDATION` | `True` | In-Fusion checks |
 | `RUN_PARAMETER_FLEX_TEST` | `True` | Edits five parameters one at a time, checks the timeline, then restores them |
+| `ADD_FASTENINGS_TO_ACTIVE_DESIGN` | `False` | `True` adds only Stage F to an AlfieBot design that is already open (one generated before the fastenings existed). Keeps your parameter values and adds the missing ones. Refuses to run twice |
 
 ## 3. Edit dimensions
 
@@ -150,6 +152,54 @@ lite, or print the cap on its own.
 
 ---
 
+## 7. Fastenings and assembly
+
+Everything except the speaker rings and grilles is held with **M3 socket
+head screws into brass M3 heat-set inserts** (M3 × 5.7 mm long × 4.6 mm OD,
+CNC Kitchen or Ruthex style, in a 4.0 mm hole). Every joint can be undone.
+
+| Joint | Screws | Inserts go in | Screw goes in from |
+|---|---|---|---|
+| Rear_Cover → Main_Body | 4 × M3 × 16 | Main_Body corner bosses, just in front of the split | The rear face, through counterbored bosses in the cover |
+| Front_Bezel → Main_Body | 4 × M3 × 8 | Bosses on the back of the bezel, beside the display | Inside, through brackets on the Main_Body side walls |
+| Button_Retainer → Main_Body | 2 × M3 × 8 | Bosses under the top wall | Below, through the retainer plate |
+| Feet + Electronics_Tray → Main_Body | 4 × M3 × 10 | Bosses on the tray, above each foot | Underneath, through each foot and the floor |
+| **Total** | **14 screws, 14 inserts** | | |
+
+How each joint works:
+- **Rear cover.** Each corner boss in Main_Body is braced to the corner by
+  a 45° web. The matching bosses in the cover run from the rear wall to the
+  split and have a 6.2 mm counterbore 13 mm deep, so the screw heads sit
+  below the rear face. The locating tabs still align the cover.
+- **Bezel and display.** The display goes in from the front, then the
+  bezel. The bezel bosses press the display back against four brackets on
+  the side walls, and the screws pull the bezel back against the brackets,
+  so the display is clamped between them. The brackets have 45° undersides
+  so they print without support, and a 6.2 mm tunnel for the screwdriver.
+  Reach the screws from the back with the rear cover off.
+- **Button.** The retainer plate sits 3.5 mm under the button flange, room
+  for a 6 × 6 mm tactile switch on the plate. It stops the button falling
+  in and the switch pushes the button up.
+- **Feet and tray.** One screw per foot goes up through the foot's
+  counterbore and the floor into an insert in the tray. It holds the foot
+  and the tray together. To take the tray out, remove the four foot screws.
+
+Assembly order:
+1. Press the heat-set inserts into Main_Body (6), Front_Bezel (4) and
+   Electronics_Tray (4) with a soldering iron and insert tip.
+2. Fit the accent rings and grilles from outside.
+3. Put the Top_Button in from inside, place the switch on the
+   Button_Retainer, and screw the retainer up into the top bosses.
+4. Fit the display, then the bezel, from the front. Screw the bezel in from
+   inside.
+5. Slide the Electronics_Tray in from the rear. Fit the feet and screw them
+   up into the tray.
+6. Fit the Rear_Cover and screw it on from the back.
+
+Print notes: inserts go in from the open face of each boss, so every insert
+hole faces up or sideways in the suggested print orientations
+(see [Component_List.md](Component_List.md)).
+
 ## How the generator is built
 
 ### Coordinate system and origins
@@ -179,6 +229,7 @@ lite, or print the cap on its own.
     ├── Rear_Cover                "
     ├── Electronics_Tray          "
     ├── Feet                      "  (4 bodies)
+    ├── Button_Retainer           "  (plate under the button, carries the switch)
     └── Eye_Graphics              joint → Display_Placeholder (visual only)
 ```
 The Fusion root component always takes the document's name, so the named
@@ -211,7 +262,8 @@ The Fusion root component always takes the document's name, so the named
 | C: Speakers | One symmetric cut through both side walls. Ring = tube + inner step + outer lip (3 joins). Grille disc + hole feature + 3 **circular patterns** about an axis from the grille's cylindrical face |
 | D: Button and feet | Button hole cut. Button flange + stem/cap join + top fillet + accent groove cut + accent inlay body. Foot extrude + fillet + **mirror** on X, then on Y = `module_center_y` |
 | E: Rear cover and tray | The same rounded shell, keeping only what is behind `split_y`. Tab roots fused into the wall + 3 locating tabs. Vent slot + **rectangular pattern**. Tray plate + rails + standoff + 2×2 **rectangular pattern** |
-| F: Finish | Appearances, grounding and joints, camera, validation, flex test, report |
+| F: Fastenings | Rear insert bosses with 45° corner webs, bezel brackets with 45° undersides, button insert bosses: joined to Main_Body, then everything outside the enclosure skin is cut away. Insert holes, clearance holes, counterbores. Bezel and tray insert bosses. Button_Retainer plate |
+| G: Finish | Appearances, grounding and joints, camera, validation, flex test, report |
 
 ### Design decisions you should know about
 - **Overall height** is `foot_height + body_height + button_height` = 141 mm,
@@ -229,10 +281,14 @@ The Fusion root component always takes the document's name, so the named
   Everything is centred in the flat side area in front of the split.
 
 ## Known limitations (V0.1)
-- **Retention isn't modelled yet.** The bezel, display, rings, grilles and
-  rear cover locate correctly, but nothing holds them in place yet: no
-  screw bosses, snaps or heat-set inserts. That is planned for V0.2. The
-  concept shows M3 screws and inserts.
+- **Accent rings and speaker grilles are still a press fit.** Everything
+  else is screwed (section 7). The rings and grilles have no screws or
+  snaps yet; a drop of CA glue holds them, or the speaker mount can clamp
+  them when it is designed.
+- **The fastenings were added to the existing Fusion design** (25 Oct 2026)
+  with the same steps as Stage F, and that design has no interference and
+  a healthy timeline. A full fresh run of this generator with Stage F has
+  not been done yet.
 - **Display size is a placeholder** (121 × 76 × 5 mm). Check it against
   the actual 5" DSI display before you print the bezel.
 - **The Raspberry Pi 5 does not fit flat on the tray** (85 × 56 board on a

@@ -17,7 +17,8 @@ Build order (matches the V0.1 development stages)
     Stage C  Side speaker holes, accent rings, speaker grilles
     Stage D  Top button and feet
     Stage E  Rear cover and electronics tray
-    Stage F  Appearances, joints, view and validation
+    Stage F  Fastenings: M3 screw bosses, heat-set insert holes, button retainer
+    Stage G  Appearances, joints, view and validation
 
 Coordinate system
     X = width (left -X to right +X), Y = depth (front -Y to rear +Y),
@@ -64,6 +65,10 @@ APPLY_APPEARANCES = True
 CREATE_JOINTS = True            # Ground Main_Body, as-built rigid joints for the rest
 RUN_VALIDATION = True
 RUN_PARAMETER_FLEX_TEST = True  # Temporarily edits parameters, then restores them
+# Add only Stage F (fastenings) to an AlfieBot design that is already open,
+# for designs generated before the fastenings existed. Existing parameter
+# values are kept; missing parameters are added with their defaults.
+ADD_FASTENINGS_TO_ACTIVE_DESIGN = False
 REPORT_FILE_NAME = "AlfieBot_Validation_Report.txt"
 
 # ---------------------------------------------------------------------------
@@ -289,6 +294,17 @@ class PartBuilder:
             point(c.x + dx / 2 + 0.3, c.y + dy / 2 + 0.3))
         d.parameter.expression = radius_expression
         return line.endSketchPoint
+
+    def polygon(self, sk, anchors):
+        """Closed polygon through construction points (each projected, so it follows the parameters)."""
+        pts = [self.project(sk, a) for a in anchors]
+        lines = sk.sketchCurves.sketchLines
+        return [lines.addByTwoPoints(pts[i], pts[(i + 1) % len(pts)]) for i in range(len(pts))]
+
+    def circles(self, sk, anchors, diameter_expression):
+        """One driven circle per construction point; returns the profiles inside them."""
+        curves = [self.circle(sk, self.project(sk, a), diameter_expression) for a in anchors]
+        return [self.profile_for_curve(sk, circ) for circ in curves]
 
     @staticmethod
     def profiles(sk, loops=None):
@@ -690,12 +706,17 @@ def build_feet(f):
     left = f.mirror([f.body("Foot_Front_Right")], f.comp.yZConstructionPlane, "Feet mirror X")
     if left:
         left[0].name = "Foot_Front_Left"
-    rear = f.mirror([f.body("Foot_Front_Right"), f.body("Foot_Front_Left")],
-                    f.plane("y", "module_center_y"), "Feet mirror Y")
-    for body in rear:
-        # Name by position; mirror result order is not guaranteed.
+    f.mirror([f.body("Foot_Front_Right"), f.body("Foot_Front_Left")],
+             f.plane("y", "module_center_y"), "Feet mirror Y")
+    # Name all four by position; mirror result order is not guaranteed and
+    # the mirror can return the source bodies as well.
+    bodies = [f.comp.bRepBodies.item(i) for i in range(f.comp.bRepBodies.count)]
+    for i, body in enumerate(bodies):
+        body.name = "tmp_foot_%d" % i
+    for body in bodies:
         bb = body.boundingBox
-        body.name = "Foot_Rear_Right" if bb.minPoint.x + bb.maxPoint.x > 0 else "Foot_Rear_Left"
+        body.name = "Foot_%s_%s" % ("Front" if bb.minPoint.y + bb.maxPoint.y < 0 else "Rear",
+                                    "Right" if bb.minPoint.x + bb.maxPoint.x > 0 else "Left")
 
 
 # ---------------------------------------------------------------------------
@@ -777,7 +798,211 @@ def build_electronics_tray(t):
 
 
 # ---------------------------------------------------------------------------
-# Stage F - appearances, joints, view
+# Stage F - fastenings (M3 screws into heat-set inserts)
+#
+#   Rear_Cover   -> Main_Body : 4 x M3 x 16 from the rear face, inserts in
+#                               corner bosses just in front of the split.
+#   Front_Bezel  -> Main_Body : 4 x M3 x 8 from inside, through brackets on
+#                               the side walls into inserts in bosses on the
+#                               bezel back. The brackets also back up the display.
+#   Button_Retainer -> Main_Body : 2 x M3 x 8 into bosses under the top wall.
+#                               The plate carries the tactile switch and stops
+#                               the button falling in.
+#   Feet + Electronics_Tray -> Main_Body : 4 x M3 x 10 from underneath,
+#                               through each foot and the floor into inserts
+#                               in bosses on the tray.
+# ---------------------------------------------------------------------------
+
+FASTENING_MARKER = "Rear insert bosses"  # Main_Body feature name; present once fastenings exist
+
+
+def stage_f_fastenings(ctx):
+    rear_cover_fastenings(ctx)
+    bezel_fastenings(ctx)
+    button_retainer(ctx)
+    feet_and_tray_fastenings(ctx)
+
+
+def join_inside_enclosure(b, tool_bodies, label):
+    """Join bosses and brackets to Main_Body, then cut away anything outside its skin.
+
+    The tool bodies are drawn oversize so they always reach into the curved
+    walls; the trim keeps them from breaking through the outside at any
+    parameter values. (Intersecting the tools with the skin instead left some
+    lumps untrimmed in Fusion, so the whole body is trimmed.)
+    """
+    b.combine(b.body("Main_Body"), tool_bodies, JOIN, label)
+    sk = b.sketch("z", "foot_height", label + " skin footprint")
+    b.rect(sk, b.project(sk, b.anchor()), {"x": "body_width/2", "y": "body_depth/2"})
+    ext = b.extrude(b.profiles(sk), "body_height", Z_POS, NEW, name=label + " skin block")
+    skin = label + " skin"
+    ext.bodies.item(0).name = skin
+    b.fillet(list(b.body(skin).edges), "corner_radius", label + " skin fillets")
+    sk = b.sketch("z", "foot_height - 20 mm", label + " outside footprint")
+    b.rect(sk, b.project(sk, b.anchor(z="foot_height - 20 mm")), {"x": "body_width/2 + 20 mm", "y": "body_depth/2 + 20 mm"})
+    ext = b.extrude(b.profiles(sk), "body_height + 40 mm", Z_POS, NEW, name=label + " outside block")
+    outside = label + " outside"
+    ext.bodies.item(0).name = outside
+    b.combine(b.body(outside), [b.body(skin)], CUT, label + " outside shell")
+    b.combine(b.body("Main_Body"), [b.body(outside)], CUT, label + " trim to skin")
+
+
+def quadrants():
+    return [(sx, sz) for sx in (-1, 1) for sz in (-1, 1)]
+
+
+def zq(sz, expression):
+    """Z expression offset above (sz = 1) or below (sz = -1) the body centre."""
+    return "body_center_z %s (%s)" % ("+" if sz > 0 else "-", expression)
+
+
+def rear_cover_fastenings(ctx):
+    b = ctx.b("Main_Body")
+    # Insert bosses in front of the split, each braced to its corner by a
+    # 45 degree web (clear of the locating tabs and of the bezel screw path).
+    sk = b.sketch("y", "split_y", "Rear insert boss profile")
+    rp = "rear_boss_diameter/(2*sqrt(2))"
+    for sx, sz in quadrants():
+        def at(dx, dz):
+            return b.anchor(x=side_expr(sx, "rear_screw_x + (%s)" % dx), y="split_y",
+                            z=zq(sz, "rear_screw_dz + (%s)" % dz))
+        b.circle(sk, b.project(sk, at("0 mm", "0 mm")), "rear_boss_diameter")
+        b.polygon(sk, [at(rp, "-" + rp), at(rp + " + 30 mm", "30 mm - " + rp),
+                       at("30 mm - " + rp, rp + " + 30 mm"), at("-" + rp, rp)])
+    ext = b.extrude(b.profiles(sk), "rear_boss_length", Y_NEG, NEW, name="Rear boss blanks")
+    bodies = [ext.bodies.item(i) for i in range(ext.bodies.count)]
+    for i, body in enumerate(bodies):
+        body.name = "Rear boss %d" % (i + 1)
+    join_inside_enclosure(b, bodies, FASTENING_MARKER)
+
+    centres = [b.anchor(x=side_expr(sx, "rear_screw_x"), y="split_y", z=zq(sz, "rear_screw_dz")) for sx, sz in quadrants()]
+    sk = b.sketch("y", "split_y", "Rear insert holes")
+    b.extrude(b.circles(sk, centres, "insert_hole_diameter"), "insert_depth", Y_NEG, CUT,
+              [b.body("Main_Body")], name="Rear insert holes")
+
+    # Rear cover: matching bosses from the split to the rear wall, a
+    # clearance hole and a counterbore from the rear face.
+    r = ctx.b("Rear_Cover")
+    centres = [r.anchor(x=side_expr(sx, "rear_screw_x"), y="split_y", z=zq(sz, "rear_screw_dz")) for sx, sz in quadrants()]
+    sk = r.sketch("y", "split_y", "Rear screw bosses")
+    r.extrude(r.circles(sk, centres, "rear_boss_diameter"), "rear_cover_depth - wall_thickness/2", Y_POS, JOIN,
+              [r.body("Rear_Cover")], name="Rear screw bosses")
+    sk = r.sketch("y", "split_y", "Rear screw clearance")
+    r.extrude(r.circles(sk, centres, "screw_clearance_diameter"), "rear_cover_depth + 1 mm", Y_POS, CUT,
+              [r.body("Rear_Cover")], name="Rear screw clearance")
+    rear = [r.anchor(x=side_expr(sx, "rear_screw_x"), y="body_depth/2", z=zq(sz, "rear_screw_dz")) for sx, sz in quadrants()]
+    sk = r.sketch("y", "body_depth/2", "Rear screw counterbores")
+    r.extrude(r.circles(sk, rear, "screw_head_clearance_diameter"), "rear_counterbore_depth", Y_NEG, CUT,
+              [r.body("Rear_Cover")], name="Rear screw counterbores")
+
+
+def bezel_fastenings(ctx):
+    # Insert bosses on the bezel back, beside the display.
+    bz = ctx.b("Front_Bezel")
+    centres = [bz.anchor(x=side_expr(sx, "bezel_screw_x"), y="display_front_y",
+                         z="face_center_z %s bezel_screw_dz" % ("+" if sz > 0 else "-")) for sx, sz in quadrants()]
+    sk = bz.sketch("y", "display_front_y", "Bezel insert bosses")
+    bz.extrude(bz.circles(sk, centres, "insert_boss_diameter"), "display_thickness", Y_POS, JOIN,
+               [bz.body("Front_Bezel")], name="Bezel insert bosses")
+    back = "display_front_y + display_thickness"
+    centres = [bz.anchor(x=side_expr(sx, "bezel_screw_x"), y=back,
+                         z="face_center_z %s bezel_screw_dz" % ("+" if sz > 0 else "-")) for sx, sz in quadrants()]
+    sk = bz.sketch("y", back, "Bezel insert holes")
+    bz.extrude(bz.circles(sk, centres, "insert_hole_diameter"), "insert_depth", Y_NEG, CUT,
+               [bz.body("Front_Bezel")], name="Bezel insert holes")
+
+    # Main_Body brackets from each side wall, behind the display, with a
+    # 45 degree underside so they print without support (front face up).
+    b = ctx.b("Main_Body")
+    y0 = back
+    y1 = "%s + bezel_bracket_thickness" % y0
+    xi, xo = "display_width/2 - bezel_bracket_overlap", "body_width/2 + 1 mm"
+    y2 = "%s + (%s) - (%s)" % (y1, xo, xi)
+    bodies = []
+    for sz in (-1, 1):
+        z = "face_center_z %s bezel_screw_dz" % ("+" if sz > 0 else "-")
+        sk = b.sketch("z", z, "Bezel brackets %s" % ("top" if sz > 0 else "bottom"))
+        for sx in (-1, 1):
+            b.polygon(sk, [b.anchor(x=side_expr(sx, xi), y=y0, z=z), b.anchor(x=side_expr(sx, xo), y=y0, z=z),
+                           b.anchor(x=side_expr(sx, xo), y=y2, z=z), b.anchor(x=side_expr(sx, xi), y=y1, z=z)])
+        ext = b.extrude_symmetric(b.profiles(sk), "bezel_bracket_width", NEW, name=sk.name + " blanks")
+        for i in range(ext.bodies.count):
+            body = ext.bodies.item(i)
+            body.name = "%s %d" % (sk.name, i + 1)
+            bodies.append(body)
+    join_inside_enclosure(b, bodies, "Bezel brackets")
+
+    centres = [b.anchor(x=side_expr(sx, "bezel_screw_x"), y=y0,
+                        z="face_center_z %s bezel_screw_dz" % ("+" if sz > 0 else "-")) for sx, sz in quadrants()]
+    sk = b.sketch("y", y0, "Bezel screw clearance")
+    b.extrude(b.circles(sk, centres, "screw_clearance_diameter"), "bezel_bracket_thickness + 1 mm", Y_POS, CUT,
+              [b.body("Main_Body")], name="Bezel screw clearance")
+    centres = [b.anchor(x=side_expr(sx, "bezel_screw_x"), y=y1,
+                        z="face_center_z %s bezel_screw_dz" % ("+" if sz > 0 else "-")) for sx, sz in quadrants()]
+    sk = b.sketch("y", y1, "Bezel screw access")
+    b.extrude(b.circles(sk, centres, "screw_head_clearance_diameter"), "(%s) - (%s) + 1 mm" % (xo, xi), Y_POS, CUT,
+              [b.body("Main_Body")], name="Bezel screw access")
+
+
+def button_retainer(ctx):
+    # Two insert bosses hanging from the top wall.
+    b = ctx.b("Main_Body")
+    top_mid = "body_top_z - wall_thickness/2"
+    centres = [b.anchor(x=side_expr(sx, "button_screw_x"), y="module_center_y", z=top_mid) for sx in (-1, 1)]
+    sk = b.sketch("z", top_mid, "Button insert bosses")
+    b.extrude(b.circles(sk, centres, "insert_boss_diameter"), "%s - button_retainer_z" % top_mid, Z_NEG, JOIN,
+              [b.body("Main_Body")], name="Button insert bosses")
+    centres = [b.anchor(x=side_expr(sx, "button_screw_x"), y="module_center_y", z="button_retainer_z") for sx in (-1, 1)]
+    sk = b.sketch("z", "button_retainer_z", "Button insert holes")
+    b.extrude(b.circles(sk, centres, "insert_hole_diameter"), "insert_depth", Z_POS, CUT,
+              [b.body("Main_Body")], name="Button insert holes")
+
+    # The retainer plate: sits under the bosses and carries the switch.
+    t = ctx.b("Button_Retainer")
+    sk = t.sketch("z", "button_retainer_z", "Retainer plate")
+    t.rect(sk, t.project(sk, t.anchor(y="module_center_y", z="button_retainer_z")),
+           {"x": "button_screw_x + insert_boss_diameter/2 + 2 mm", "y": "insert_boss_diameter/2 + 2 mm"})
+    ext = t.extrude(t.profiles(sk), "button_retainer_thickness", Z_NEG, NEW, name="Retainer plate")
+    ext.bodies.item(0).name = "Button_Retainer"
+    centres = [t.anchor(x=side_expr(sx, "button_screw_x"), y="module_center_y", z="button_retainer_z") for sx in (-1, 1)]
+    sk = t.sketch("z", "button_retainer_z", "Retainer screw holes")
+    t.extrude(t.circles(sk, centres, "screw_clearance_diameter"), "button_retainer_thickness + 1 mm", Z_NEG, CUT,
+              [t.body("Button_Retainer")], name="Retainer screw holes")
+
+
+def feet_and_tray_fastenings(ctx):
+    spots = [(sx, y) for sx in (-1, 1) for y in ("foot_front_y", "foot_rear_y")]
+
+    # Tray: insert bosses on top of the plate, inserts pressed in from below.
+    t = ctx.b("Electronics_Tray")
+    top = "tray_z + tray_thickness"
+    sk = t.sketch("z", top, "Tray insert bosses")
+    t.extrude(t.circles(sk, [t.anchor(x=side_expr(sx, "foot_x"), y=y, z=top) for sx, y in spots], "insert_boss_diameter"),
+              "standoff_height", Z_POS, JOIN, [t.body("Electronics_Tray")], name="Tray insert bosses")
+    sk = t.sketch("z", "tray_z", "Tray insert holes")
+    t.extrude(t.circles(sk, [t.anchor(x=side_expr(sx, "foot_x"), y=y, z="tray_z") for sx, y in spots], "insert_hole_diameter"),
+              "insert_depth", Z_POS, CUT, [t.body("Electronics_Tray")], name="Tray insert holes")
+
+    # Main_Body floor: clearance holes.
+    b = ctx.b("Main_Body")
+    sk = b.sketch("z", "foot_height", "Floor screw holes")
+    b.extrude(b.circles(sk, [b.anchor(x=side_expr(sx, "foot_x"), y=y, z="foot_height") for sx, y in spots],
+                        "screw_clearance_diameter"),
+              "wall_thickness + 1 mm", Z_POS, CUT, [b.body("Main_Body")], name="Floor screw holes")
+
+    # Feet: clearance hole and a counterbore from underneath.
+    f = ctx.b("Feet")
+    feet = [f.comp.bRepBodies.item(i) for i in range(f.comp.bRepBodies.count)]
+    sk = f.sketch("z", None, "Foot screw holes")
+    f.extrude(f.circles(sk, [f.anchor(x=side_expr(sx, "foot_x"), y=y) for sx, y in spots], "screw_clearance_diameter"),
+              "foot_height + 1 mm", Z_POS, CUT, feet, name="Foot screw holes")
+    sk = f.sketch("z", None, "Foot counterbores")
+    f.extrude(f.circles(sk, [f.anchor(x=side_expr(sx, "foot_x"), y=y) for sx, y in spots], "screw_head_clearance_diameter"),
+              "foot_counterbore_depth", Z_POS, CUT, feet, name="Foot counterbores")
+
+
+# ---------------------------------------------------------------------------
+# Stage G - appearances, joints, view
 # ---------------------------------------------------------------------------
 
 # name: (base appearance candidates, RGB)
@@ -804,6 +1029,7 @@ APPEARANCE_MAP = [
     ("Top_Button", "Button_Accent", "AlfieBot Cyan Blue"),
     ("Feet", None, "AlfieBot Dark Grey"),
     ("Electronics_Tray", None, "AlfieBot Dark Grey"),
+    ("Button_Retainer", None, "AlfieBot Dark Grey"),
     ("Eye_Graphics", "Eye_Ring_1", "AlfieBot Cyan Blue"),
     ("Eye_Graphics", "Eye_Ring_2", "AlfieBot Cyan Blue"),
     ("Eye_Graphics", "Eye_Highlight_1", "AlfieBot Highlight White"),
@@ -856,7 +1082,7 @@ def _tint(appearance, rgb):
     return False
 
 
-def apply_appearances(ctx):
+def apply_appearances(ctx, only=None):
     lib = _appearance_library()
     if not lib:
         log("No appearance library found; appearances skipped", "WARN")
@@ -877,6 +1103,8 @@ def apply_appearances(ctx):
             log("Could not set colour on %s (base %s)" % (name, base.name), "WARN")
         created[name] = appearance
     for comp_name, body_name, appearance_name in APPEARANCE_MAP:
+        if only is not None and comp_name not in only:
+            continue
         b = ctx.builders.get(comp_name)
         appearance = created.get(appearance_name)
         if not b or not appearance:
@@ -889,7 +1117,7 @@ def apply_appearances(ctx):
     log("Appearances applied")
 
 
-def create_joints(ctx):
+def create_joints(ctx, only=None):
     """Ground Main_Body; tie every other part to it with as-built rigid joints.
 
     Parts stay separate components, so any joint can be suppressed or
@@ -899,7 +1127,7 @@ def create_joints(ctx):
     main.isGrounded = True
     joints = ctx.asm.asBuiltJoints
     for name, b in ctx.builders.items():
-        if name == "Main_Body":
+        if name == "Main_Body" or (only is not None and name not in only):
             continue
         parent = ctx.b("Display_Placeholder").occ if name == "Eye_Graphics" else main
         try:
@@ -1175,6 +1403,46 @@ def create_user_parameters(design):
     log("Created %d user parameters" % len(AP.ALL_PARAMETERS))
 
 
+def add_missing_user_parameters(design):
+    user_params = design.userParameters
+    added = []
+    for name, expression, unit, comment in AP.ALL_PARAMETERS:
+        if not user_params.itemByName(name):
+            user_params.add(name, vi(expression), unit, comment)
+            added.append(name)
+    log("Added %d missing user parameters" % len(added))
+    return added
+
+
+def context_for_active_design():
+    """BuildContext over the AlfieBot assembly in the active design (upgrade mode)."""
+    design = adsk.fusion.Design.cast(_app.activeProduct)
+    if not design:
+        raise StageError("No active Fusion design. Open the AlfieBot design and run again.")
+    assembly_occ = None
+    occs = design.rootComponent.occurrences
+    for i in range(occs.count):
+        if occs.item(i).component.name == AP.ASSEMBLY_NAME:
+            assembly_occ = occs.item(i)
+    if assembly_occ is None:
+        raise StageError("No '%s' component in the active design." % AP.ASSEMBLY_NAME)
+    ctx = BuildContext(design, assembly_occ)
+    children = ctx.asm.occurrences
+    for i in range(children.count):
+        occ = children.item(i)
+        ctx.builders[occ.component.name] = PartBuilder(design, occ)
+    missing = [n for n in AP.COMPONENTS if n not in ctx.builders and n != "Button_Retainer"]
+    if missing:
+        raise StageError("The active design is missing: %s" % ", ".join(missing))
+    combines = ctx.b("Main_Body").feats.combineFeatures
+    if any(combines.item(i).name.startswith(FASTENING_MARKER) for i in range(combines.count)):
+        raise StageError("The active design already has the fastenings.")
+    add_missing_user_parameters(design)
+    if "Button_Retainer" not in ctx.builders:
+        ctx.add_component("Button_Retainer")
+    return ctx
+
+
 def prepare_design():
     if CREATE_NEW_DOCUMENT:
         doc = _app.documents.add(adsk.core.DocumentTypes.FusionDesignDocumentType)
@@ -1196,6 +1464,7 @@ STAGES = [
     ("C", "Speaker grilles and accent rings", stage_c_speakers),
     ("D", "Top button and feet", stage_d_button_feet),
     ("E", "Rear cover and electronics tray", stage_e_rear_tray),
+    ("F", "Fastenings (screw bosses, inserts, retainer)", stage_f_fastenings),
 ]
 
 
@@ -1208,19 +1477,26 @@ def run(context):
         _ui = _app.userInterface
         log("AlfieBot V%s generator starting" % AP.VERSION)
 
-        design = prepare_design()
-        create_user_parameters(design)
+        if ADD_FASTENINGS_TO_ACTIVE_DESIGN:
+            ctx = context_for_active_design()
+            stages = [s for s in STAGES if s[0] == "F"]
+            new_parts = ["Button_Retainer"]
+        else:
+            design = prepare_design()
+            create_user_parameters(design)
 
-        root = design.rootComponent
-        assembly_occ = root.occurrences.addNewComponent(adsk.core.Matrix3D.create())
-        assembly_occ.component.name = AP.ASSEMBLY_NAME
-        ctx = BuildContext(design, assembly_occ)
-        for name in AP.COMPONENTS + (AP.VISUAL_COMPONENTS if CREATE_EYE_GRAPHICS else []):
-            ctx.add_component(name)
-        log("Created %d components under %s" % (len(ctx.builders), AP.ASSEMBLY_NAME))
+            root = design.rootComponent
+            assembly_occ = root.occurrences.addNewComponent(adsk.core.Matrix3D.create())
+            assembly_occ.component.name = AP.ASSEMBLY_NAME
+            ctx = BuildContext(design, assembly_occ)
+            for name in AP.COMPONENTS + (AP.VISUAL_COMPONENTS if CREATE_EYE_GRAPHICS else []):
+                ctx.add_component(name)
+            log("Created %d components under %s" % (len(ctx.builders), AP.ASSEMBLY_NAME))
+            stages = STAGES
+            new_parts = None
 
         # Each stage is isolated: a failure is logged and later stages still run.
-        for code, title, func in STAGES:
+        for code, title, func in stages:
             try:
                 func(ctx)
                 ctx.stage_status.append((code, title, "OK", ""))
@@ -1230,13 +1506,13 @@ def run(context):
                 log("Stage %s (%s) FAILED: %s\n%s" % (code, title, exc, traceback.format_exc()), "ERROR")
             adsk.doEvents()
 
-        # Stage F
+        # Stage G
         for label, func in (("Appearances", apply_appearances if APPLY_APPEARANCES else None),
                             ("Joints", create_joints if CREATE_JOINTS else None)):
             if func is None:
                 continue
             try:
-                func(ctx)
+                func(ctx, new_parts)
             except Exception as exc:  # noqa: BLE001
                 log("%s failed: %s\n%s" % (label, exc, traceback.format_exc()), "ERROR")
         set_view()

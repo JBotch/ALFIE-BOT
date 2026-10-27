@@ -113,6 +113,32 @@ SECONDARY_PARAMETERS = [
     ("eye_graphic_thickness", "0.2 mm", "mm", "Eye graphic thickness (visual only)"),
 ]
 
+# Fastenings: M3 screws into M3 heat-set inserts (see FASTENERS below).
+FASTENER_PARAMETERS = [
+    ("insert_hole_diameter", "4 mm", "mm", "Hole for an M3 heat-set insert (M3 x 5.7 x 4.6 type; check the insert datasheet)"),
+    ("insert_depth", "6 mm", "mm", "Depth of every heat-set insert hole"),
+    ("insert_boss_diameter", "8 mm", "mm", "Outer diameter of insert bosses"),
+    ("screw_clearance_diameter", "3.4 mm", "mm", "M3 screw clearance hole"),
+    ("screw_head_clearance_diameter", "6.2 mm", "mm", "Counterbore and driver access for an M3 socket head (5.5 mm)"),
+    # Rear cover to main body: 4 x M3 x 16
+    ("rear_screw_inset", "6 mm", "mm", "Rear screw inset from where the rear edge fillets start"),
+    ("rear_boss_diameter", "9 mm", "mm", "Rear cover screw boss diameter (holds the counterbore)"),
+    ("rear_boss_length", "14 mm", "mm", "Main_Body rear insert boss length in front of the split plane"),
+    ("rear_counterbore_depth", "13 mm", "mm", "Screw head counterbore depth from the rear face"),
+    # Front bezel to main body: 4 x M3 x 8
+    ("bezel_screw_edge", "5 mm", "mm", "Bezel screw centre inset from the bezel side edge"),
+    ("bezel_screw_dz", "32 mm", "mm", "Bezel screw Z offset above and below the face centre"),
+    ("bezel_bracket_thickness", "4 mm", "mm", "Main_Body bezel bracket thickness (Y)"),
+    ("bezel_bracket_width", "12 mm", "mm", "Main_Body bezel bracket width (Z)"),
+    ("bezel_bracket_overlap", "4 mm", "mm", "How far the bezel brackets reach over the display back edge"),
+    # Top button retainer: 2 x M3 x 8
+    ("button_switch_height", "3.5 mm", "mm", "Tactile switch height between the retainer and the button flange (6 x 6 mm switch)"),
+    ("button_screw_offset", "6 mm", "mm", "Gap from the button flange edge to the retainer screw centre"),
+    ("button_retainer_thickness", "2.5 mm", "mm", "Button retainer plate thickness"),
+    # Feet and tray: 4 x M3 x 10 through each foot and the floor into the tray
+    ("foot_counterbore_depth", "3.5 mm", "mm", "Screw head counterbore depth in each foot"),
+]
+
 # Dependent values. Edit the expressions only if you want to change the
 # design intent, not just a size.
 DERIVED_PARAMETERS = [
@@ -130,9 +156,16 @@ DERIVED_PARAMETERS = [
     ("tray_z", "foot_height + wall_thickness", "mm", "Z of the tray underside (inner floor)"),
     ("tray_width", "body_width - 2*corner_radius - 2*assembly_clearance", "mm", "Tray width (fits the flat floor)"),
     ("tray_depth", "body_depth - 2*corner_radius - 2*assembly_clearance", "mm", "Tray depth (fits the flat floor)"),
+    ("foot_rear_y", "2*module_center_y - foot_front_y", "mm", "Rear foot centre Y (mirror of the front feet)"),
+    ("rear_screw_x", "body_width/2 - corner_radius - rear_screw_inset", "mm", "Rear cover screw X offset"),
+    ("rear_screw_dz", "body_height/2 - corner_radius - rear_screw_inset", "mm", "Rear cover screw Z offset from the body centre"),
+    ("bezel_screw_x", "face_width/2 - bezel_screw_edge", "mm", "Bezel screw X offset"),
+    ("button_screw_x", "button_diameter/2 + button_flange_width + button_screw_offset", "mm", "Button retainer screw X offset"),
+    ("button_retainer_z", "body_top_z - wall_thickness - button_travel - button_flange_thickness - button_switch_height",
+     "mm", "Z of the button retainer top face"),
 ]
 
-ALL_PARAMETERS = PRIMARY_PARAMETERS + SECONDARY_PARAMETERS + DERIVED_PARAMETERS
+ALL_PARAMETERS = PRIMARY_PARAMETERS + SECONDARY_PARAMETERS + FASTENER_PARAMETERS + DERIVED_PARAMETERS
 PARAMETER_UNITS = {p[0]: p[2] for p in ALL_PARAMETERS}
 
 # ---------------------------------------------------------------------------
@@ -151,6 +184,7 @@ COMPONENTS = [
     "Rear_Cover",
     "Electronics_Tray",
     "Feet",
+    "Button_Retainer",
 ]
 
 # Optional, visual only. Never printed, excluded from physical checks.
@@ -158,6 +192,16 @@ VISUAL_COMPONENTS = ["Eye_Graphics"]
 
 # Components that are 3D printed on the A1 Mini.
 PRINTABLE_COMPONENTS = [c for c in COMPONENTS if c != "Display_Placeholder"]
+
+# Bought fasteners. Inserts are M3 x 5.7 mm long x 4.6 mm OD brass heat-set
+# inserts (CNC Kitchen / Ruthex style). Screws are ISO 4762 socket heads.
+# (joint, quantity, screw, inserts, where the inserts go)
+FASTENERS = [
+    ("Rear_Cover to Main_Body", 4, "M3 x 16", 4, "Main_Body rear corner bosses"),
+    ("Front_Bezel to Main_Body", 4, "M3 x 8", 4, "Front_Bezel back bosses"),
+    ("Button_Retainer to Main_Body", 2, "M3 x 8", 2, "Main_Body bosses under the top wall"),
+    ("Feet + Electronics_Tray to Main_Body", 4, "M3 x 10", 4, "Electronics_Tray bosses above each foot"),
+]
 
 # Parameter edits used by the in-Fusion flex test (and the offline checker).
 FLEX_TESTS = [
@@ -243,7 +287,8 @@ def part_envelopes(v):
 
     bw, bh = v["face_width"] / 2 - c, v["face_height"] / 2 - c
     yb = -D / 2 + v["face_recess"]
-    env["Front_Bezel"] = ((-bw, bw), (yb, yb + v["bezel_thickness"]), (fcz - bh, fcz + bh))
+    # Plate plus the insert bosses on its back, which reach the display back.
+    env["Front_Bezel"] = ((-bw, bw), (yb, v["display_front_y"] + v["display_thickness"]), (fcz - bh, fcz + bh))
 
     dw, dh, yd = v["display_width"] / 2, v["display_height"] / 2, v["display_front_y"]
     env["Display_Placeholder"] = ((-dw, dw), (yd, yd + v["display_thickness"]), (fcz - dh, fcz + dh))
@@ -270,6 +315,11 @@ def part_envelopes(v):
     fr, fx, fy = v["foot_diameter"] / 2, v["foot_x"], v["foot_front_y"]
     ry = 2 * mc - fy
     env["Feet"] = ((-fx - fr, fx + fr), (fy - fr, ry + fr), (0.0, fh))
+
+    rx = v["button_screw_x"] + v["insert_boss_diameter"] / 2 + 2
+    ry2 = v["insert_boss_diameter"] / 2 + 2
+    rz = v["button_retainer_z"]
+    env["Button_Retainer"] = ((-rx, rx), (mc - ry2, mc + ry2), (rz - v["button_retainer_thickness"], rz))
     return env
 
 
@@ -416,9 +466,101 @@ def design_rule_checks(v):
           v["tray_width"] / 2 < side_tab_inner_x or env["Electronics_Tray"][2][1] < zc - (H / 2 - R - 2),
           "tray top Z %.1f, side tabs start at Z %.1f" % (env["Electronics_Tray"][2][1], zc - (H / 2 - R - 2)))
 
+    out.extend(fastener_checks(v, env, check_fn=check))
+
     # Printability
     for name in PRINTABLE_COMPONENTS:
         size = box_size(env[name])
         check("Fits A1 Mini: %s" % name, fits_build_volume(size),
               "%.1f x %.1f x %.1f mm" % size)
     return out
+
+
+def _distance_to_diagonal(px, pz, cx, cz):
+    """Distance from (px, pz) to the 45 degree line through (cx, cz) heading outwards (+X, +Z)."""
+    return abs((px - cx) - (pz - cz)) / math.sqrt(2)
+
+
+def fastener_checks(v, env, check_fn):
+    """Design rules for the screw bosses, inserts and retainers.
+
+    `check_fn(name, ok, detail, warn_only=False)` records each result; this
+    returns an empty list so it can be used with list.extend().
+    """
+    check = check_fn
+    W, H = v["body_width"], v["body_height"]
+    t, R, c = v["wall_thickness"], v["corner_radius"], v["assembly_clearance"]
+    zc, top = v["body_center_z"], v["body_top_z"]
+    hole, depth, boss = v["insert_hole_diameter"], v["insert_depth"], v["insert_boss_diameter"]
+    head, clear = v["screw_head_clearance_diameter"], v["screw_clearance_diameter"]
+
+    check("Insert boss wall", (boss - hole) / 2 >= 1.5, "%.2f mm around the insert" % ((boss - hole) / 2))
+    check("Screw clearance smaller than insert hole", clear < hole, "clearance %.1f, insert hole %.1f" % (clear, hole))
+
+    # Rear cover screws
+    rx, rdz, rb = v["rear_screw_x"], v["rear_screw_dz"], v["rear_boss_diameter"]
+    check("Rear counterbores on the flat rear face",
+          rx + head / 2 <= W / 2 - R and rdz + head / 2 <= H / 2 - R,
+          "counterbore reaches X %.1f Z +/-%.1f, flat face X %.1f Z +/-%.1f" % (rx + head / 2, rdz + head / 2, W / 2 - R, H / 2 - R))
+    check("Rear boss wall around the counterbore", (rb - head) / 2 >= 1.2, "%.2f mm" % ((rb - head) / 2), warn_only=True)
+    check("Rear main body boss holds the insert", v["rear_boss_length"] >= depth + 1,
+          "boss %.1f mm, insert hole %.1f mm" % (v["rear_boss_length"], depth))
+    tab_len_x, tab_len_z = W / 2 - R - 2, H / 2 - R - 2
+    top_tab_bottom = H / 2 - t - c - v["lip_thickness"]
+    side_tab_inner = W / 2 - t - c - v["lip_thickness"]
+    check("Rear bosses clear of the top tab", rx - rb / 2 > tab_len_x or rdz + rb / 2 < top_tab_bottom,
+          "boss top Z +%.1f, tab underside Z +%.1f" % (rdz + rb / 2, top_tab_bottom))
+    check("Rear bosses clear of the side tabs", rdz - rb / 2 > tab_len_z or rx + rb / 2 < side_tab_inner,
+          "boss outer X %.1f, tab inner X %.1f" % (rx + rb / 2, side_tab_inner))
+    screw_len = v["rear_cover_depth"] - v["rear_counterbore_depth"] + depth - 1
+    check("Rear screw length", 12 <= screw_len <= 20, "M3 x %.0f needed (rear cover %.1f, counterbore %.1f)" % (
+        screw_len, v["rear_cover_depth"], v["rear_counterbore_depth"]), warn_only=True)
+
+    # Bezel screws
+    bx, bdz = v["bezel_screw_x"], v["bezel_screw_dz"]
+    check("Bezel bosses beside the display", bx - boss / 2 >= v["display_width"] / 2 + c,
+          "boss inner X %.1f, display edge %.1f" % (bx - boss / 2, v["display_width"] / 2))
+    check("Bezel bosses inside the bezel outline", bx + boss / 2 <= v["face_width"] / 2 - c,
+          "boss outer X %.1f, bezel edge %.1f" % (bx + boss / 2, v["face_width"] / 2 - c))
+    check("Bezel bosses beside the display (Z)", bdz + boss / 2 <= v["face_height"] / 2 - c,
+          "boss top Z +%.1f, bezel edge +%.1f" % (bdz + boss / 2, v["face_height"] / 2 - c))
+    yb = v["display_front_y"]
+    ybk = yb + v["display_thickness"]
+    boss_box = ((bx - boss / 2, bx + boss / 2), (yb, ybk), (zc + bdz - boss / 2, zc + bdz + boss / 2))
+    check("Bezel bosses inside the cavity", box_inside_cavity(v, boss_box), "margin %.2f mm" % cavity_margin(v, boss_box))
+    check("Bezel insert leaves a front skin", v["bezel_thickness"] + v["display_thickness"] - depth >= 1.5,
+          "%.1f mm" % (v["bezel_thickness"] + v["display_thickness"] - depth))
+    check("Bezel brackets clear of the speaker holes",
+          bdz - v["bezel_bracket_width"] / 2 >= v["speaker_hole_diameter"] / 2 + 1,
+          "bracket from Z +%.1f, speaker hole to +%.1f" % (bdz - v["bezel_bracket_width"] / 2, v["speaker_hole_diameter"] / 2))
+    check("Bezel brackets back up the display", v["bezel_bracket_overlap"] >= 2 and
+          v["display_width"] / 2 - v["bezel_bracket_overlap"] < bx - head / 2,
+          "overlap %.1f mm" % v["bezel_bracket_overlap"])
+    access = min(_distance_to_diagonal(bx, bdz, rx, rdz), math.hypot(bx - rx, bdz - rdz))
+    check("Bezel screw access clear of the rear bosses", access >= rb / 2 + head / 2 + 0.5,
+          "%.1f mm from the rear boss web" % access, warn_only=True)
+
+    # Button retainer
+    rbtn = v["button_diameter"] / 2 + v["button_flange_width"]
+    bsx = v["button_screw_x"]
+    check("Button bosses clear of the flange", bsx - boss / 2 >= rbtn + 1, "gap %.1f mm" % (bsx - boss / 2 - rbtn))
+    check("Button bosses under the flat top", bsx + boss / 2 + 2 <= W / 2 - R, "retainer reaches X %.1f" % (bsx + boss / 2 + 2))
+    check("Button boss holds the insert", top - t - v["button_retainer_z"] >= depth - 0.01,
+          "boss %.1f mm" % (top - t - v["button_retainer_z"]))
+    check("Button retainer clear of the display", v["button_retainer_z"] - v["button_retainer_thickness"] >
+          v["face_center_z"] + v["face_height"] / 2, "retainer underside Z %.1f" % (v["button_retainer_z"] - v["button_retainer_thickness"]))
+
+    # Feet and tray
+    fx = v["foot_x"]
+    check("Tray bosses inside the rails", fx + boss / 2 <= v["tray_width"] / 2 - v["tray_rail_width"],
+          "boss outer X %.1f, rail inner X %.1f" % (fx + boss / 2, v["tray_width"] / 2 - v["tray_rail_width"]))
+    edge = max(abs(v["foot_front_y"]), abs(v["foot_rear_y"])) + boss / 2
+    check("Tray bosses on the tray", edge <= v["tray_depth"] / 2, "boss Y %.1f, tray half depth %.1f" % (edge, v["tray_depth"] / 2))
+    gap = min(math.hypot(fx - v["pi_hole_spacing_x"] / 2, fy - sy * v["pi_hole_spacing_y"] / 2)
+              for fy in (v["foot_front_y"], v["foot_rear_y"]) for sy in (-1, 1))
+    check("Tray bosses clear of the Pi standoffs", gap >= (boss + v["standoff_diameter"]) / 2 + 1, "%.1f mm centre to centre" % gap)
+    check("Tray insert leaves a top skin", v["tray_thickness"] + v["standoff_height"] - depth >= 1.0,
+          "%.1f mm" % (v["tray_thickness"] + v["standoff_height"] - depth))
+    check("Foot counterbore leaves a foot", v["foot_height"] - v["foot_counterbore_depth"] >= 2.0,
+          "%.1f mm under the head" % (v["foot_height"] - v["foot_counterbore_depth"]))
+    return []

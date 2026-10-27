@@ -84,6 +84,29 @@ All component origins coincide with the assembly origin (identity transforms).
 | `eye_offset_z` | `6 mm` | 6 | mm | Eye graphic height above the face centre (visual only) |
 | `eye_graphic_thickness` | `0.2 mm` | 0.2 | mm | Eye graphic thickness (visual only) |
 
+## 2b. Fastening parameters (M3 screws and heat-set inserts)
+
+| Parameter | Expression | Value | Unit | Purpose |
+|---|---|---|---|---|
+| `insert_hole_diameter` | `4 mm` | 4 | mm | Hole for an M3 heat-set insert (M3 x 5.7 x 4.6 type; check the insert datasheet) |
+| `insert_depth` | `6 mm` | 6 | mm | Depth of every heat-set insert hole |
+| `insert_boss_diameter` | `8 mm` | 8 | mm | Outer diameter of insert bosses |
+| `screw_clearance_diameter` | `3.4 mm` | 3.4 | mm | M3 screw clearance hole |
+| `screw_head_clearance_diameter` | `6.2 mm` | 6.2 | mm | Counterbore and driver access for an M3 socket head (5.5 mm) |
+| `rear_screw_inset` | `6 mm` | 6 | mm | Rear screw inset from where the rear edge fillets start |
+| `rear_boss_diameter` | `9 mm` | 9 | mm | Rear cover screw boss diameter (holds the counterbore) |
+| `rear_boss_length` | `14 mm` | 14 | mm | Main_Body rear insert boss length in front of the split plane |
+| `rear_counterbore_depth` | `13 mm` | 13 | mm | Screw head counterbore depth from the rear face |
+| `bezel_screw_edge` | `5 mm` | 5 | mm | Bezel screw centre inset from the bezel side edge |
+| `bezel_screw_dz` | `32 mm` | 32 | mm | Bezel screw Z offset above and below the face centre |
+| `bezel_bracket_thickness` | `4 mm` | 4 | mm | Main_Body bezel bracket thickness (Y) |
+| `bezel_bracket_width` | `12 mm` | 12 | mm | Main_Body bezel bracket width (Z) |
+| `bezel_bracket_overlap` | `4 mm` | 4 | mm | How far the bezel brackets reach over the display back edge |
+| `button_switch_height` | `3.5 mm` | 3.5 | mm | Tactile switch height between the retainer and the button flange (6 x 6 mm switch) |
+| `button_screw_offset` | `6 mm` | 6 | mm | Gap from the button flange edge to the retainer screw centre |
+| `button_retainer_thickness` | `2.5 mm` | 2.5 | mm | Button retainer plate thickness |
+| `foot_counterbore_depth` | `3.5 mm` | 3.5 | mm | Screw head counterbore depth in each foot |
+
 ## 3. Derived parameters (expressions of other parameters)
 
 Change these only to change the design intent. Normally you edit the
@@ -105,6 +128,12 @@ primary or secondary values and these follow.
 | `tray_z` | `foot_height + wall_thickness` | 9 | mm | Z of the tray underside (inner floor) |
 | `tray_width` | `body_width - 2*corner_radius - 2*assembly_clearance` | 115.4 | mm | Tray width (fits the flat floor) |
 | `tray_depth` | `body_depth - 2*corner_radius - 2*assembly_clearance` | 55.4 | mm | Tray depth (fits the flat floor) |
+| `foot_rear_y` | `2*module_center_y - foot_front_y` | 18 | mm | Rear foot centre Y (mirror of the front feet) |
+| `rear_screw_x` | `body_width/2 - corner_radius - rear_screw_inset` | 52 | mm | Rear cover screw X offset |
+| `rear_screw_dz` | `body_height/2 - corner_radius - rear_screw_inset` | 37 | mm | Rear cover screw Z offset from the body centre |
+| `bezel_screw_x` | `face_width/2 - bezel_screw_edge` | 65 | mm | Bezel screw X offset |
+| `button_screw_x` | `button_diameter/2 + button_flange_width + button_screw_offset` | 20 | mm | Button retainer screw X offset |
+| `button_retainer_z` | `body_top_z - wall_thickness - button_travel - button_flange_thickness - button_switch_height` | 127 | mm | Z of the button retainer top face |
 
 ## Fixed ratios in the script
 
@@ -139,7 +168,11 @@ Edits the in-Fusion flex test makes (one at a time, then restored):
 - `speaker_diameter` → `38 mm`
 - `face_width` → `130 mm`
 
-All of these pass the offline layout rules. Whether the Fusion timeline
+With the fastenings added, `face_width = 130 mm` fails one offline rule:
+the bezel border beside the 121 mm display becomes too narrow for the 8 mm
+bezel insert bosses. A narrower face needs a smaller display or smaller
+bosses. `body_width = 175 mm` gives a WARN: the bezel screw path passes
+close to the rear corner web. The rest pass. Whether the Fusion timeline
 recomputes cleanly with them still needs to be confirmed by running the script.
 
 ## Constraints between parameters
@@ -148,4 +181,5 @@ recomputes cleanly with them still needs to be confirmed by running the script.
 - `face_width/2` ≤ `body_width/2 − wall_thickness − 2 mm`: the face opening must not cut the side walls.
 - `speaker_hole_diameter/2 + accent_ring_lip` must fit the flat side area: Y from `−(body_depth/2 − corner_radius)` to `split_y`, Z within `±(body_height/2 − corner_radius)`.
 - `button_diameter/2 + button_flange_width` must fit under the flat top.
+- Fastenings: rear counterbores must stay on the flat rear face, bezel bosses must fit between the display edge and the bezel edge, and the bezel brackets must stay clear of the speaker holes. `offline_layout_check.py` checks all of these.
 - `accent_ring_width − 2·assembly_clearance`, `lip_thickness`, `wall_thickness − grille_step` and `wall_thickness` must each be ≥ 1.2 mm (three 0.4 mm perimeters).

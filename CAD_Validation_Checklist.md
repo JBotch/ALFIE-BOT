@@ -11,7 +11,7 @@
 |---|---|---|
 | Python syntax and undefined names | `py_compile`, `pyflakes` | Clean |
 | Every script code path runs without Python errors | Mocked `adsk` module (stand-in objects, no geometry) | All stages, validation and the flex test ran to completion. This proves control flow only. |
-| Layout maths: envelopes, A1 Mini fit, parts inside the cavity, features on flat faces, FDM walls | `python offline_layout_check.py --flex` | 44/44 rules pass at the defaults and for each of the 5 flex-test edits |
+| Layout maths: envelopes, A1 Mini fit, parts inside the cavity, features on flat faces, FDM walls, fastenings | `python offline_layout_check.py --flex` | 70/70 rules pass at the defaults. With the flex edits, `face_width = 130 mm` fails the bezel-boss rule and `body_width = 175 mm` warns on bezel screw access (see Design_Parameters.md) |
 
 What these do **not** prove: that each Fusion API call behaves as
 expected in your Fusion build, that fillets, shells and combines succeed,
@@ -57,15 +57,40 @@ Watch for these **WARN lines in the build log**:
 | M4 | Rear cover fit | Section: tabs 0.3 mm inside the body walls. Covers butt at Y = split_y | ☐ |
 | M5 | Button | Section: flange 1 mm below the top wall. 0.3 mm radial gap in the hole. Cap 5 mm proud | ☐ |
 | M6 | Speakers | Ring lip sits on the side face. Grille sits on the step, flush with the side face. 37 holes per grille | ☐ |
-| M7 | Tray removable | Hide Rear_Cover. The tray can slide out of the back with nothing blocking it (there is no bottom tab) | ☐ |
+| M7 | Tray removable | Hide Rear_Cover and remove the four foot screws. The tray can slide out of the back with nothing blocking it (there is no bottom tab) | ☐ |
 | M8 | Parameter edit by hand | Change `body_width` to 170 mm and `corner_radius` to 20 mm. Everything follows. Undo | ☐ |
 | M9 | Rear cover separate | Suppress `Rigid Rear_Cover` and drag the cover backwards. It moves on its own | ☐ |
 | M10 | Export | Save As Mesh (3MF) for Main_Body and Rear_Cover, then import into Bambu Studio and check the size and the orientation in Component_List.md | ☐ |
 | M11 | Slicer check | Slice Main_Body standing on its rear rim. Check overhang warnings at the side holes and button hole | ☐ |
 
+## Fastenings added in Fusion (25 Oct 2026)
+
+Stage F was applied to the saved `AlfieBot_V0.1` design in Fusion through
+the Fusion connector, step by step, with the same parameters and features
+as the generator. Checked afterwards in Fusion:
+
+| Check | Result |
+|---|---|
+| Timeline health after every step | All items healthy |
+| Interference across all 12 physical components (coincident faces excluded) | None |
+| Main_Body still inside its skin (oriented bounding box) | 160 × 75.6 × 130, one lump |
+| Insert and clearance holes open (point containment at hole axes) | Open at all rear, bezel bracket and access positions |
+| Volumes match hand calculations (button bosses, retainer plate, floor holes) | Yes |
+
+Manual checks for the fastenings:
+
+| # | Check | How | Result |
+|---|---|---|---|
+| F1 | Rear screws | Section on X = 52: counterbore, clearance hole, insert hole line up across the split | ☐ |
+| F2 | Bezel clamp | Section on X = 65: bezel boss, display back and bracket front meet at Y = −38 | ☐ |
+| F3 | Screwdriver access | From the rear opening, a straight 3 mm driver reaches each bezel screw | ☐ |
+| F4 | Button | Section on X = 0: 3.5 mm between retainer top and the button flange for the switch | ☐ |
+| F5 | Feet | Section through a foot: counterbore, floor hole and tray insert line up | ☐ |
+| F6 | Test print | Print a small coupon of one boss and fit an insert before printing the full body | ☐ |
+
 ## Known unresolved issues (to report against)
 
-1. Retention is not modelled (screws, inserts, snaps) for the bezel, display, rings, grilles, button and rear cover.
+1. The accent rings and speaker grilles are still a press fit (no screws or snaps).
 2. The display dimensions are placeholders.
 3. A Raspberry Pi 5 board (85 × 56) does not fit flat on the 55.4 mm deep tray. Mounting is to be decided in Prototype 2.
 4. Horizontal holes in Main_Body (speakers, button) need support or a teardrop shape when printed upright.
