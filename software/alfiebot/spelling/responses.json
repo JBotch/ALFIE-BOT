@@ -1,5 +1,5 @@
 {
-  "_comment": "What AlfieBot says in the spelling tutor. Several options per line; one is picked at random. Placeholders: {word}, {Word} (capital first letter), {letters} (B-E-C-A-U-S-E), {slow_letters}, {n}, {total}, {count}, {score}, {first}, {length}, {pattern}, {answer}, {missed}.",
+  "_comment": "What AlfieBot says in the spelling tutor. Several options per line; one is picked at random. Placeholders: {word}, {Word} (capital first letter), {letters} (B-E-C-A-U-S-E), {slow_letters}, {n}, {total}, {count}, {score}, {first}, {length}, {pattern}, {answer}, {missed}, {answer}/{so_far} (the child's letters), {removed}, {n} (letter number), {options}, {option}, {example}, {heard}.",
   "menu_question": [
     "Would you like to add this week's spellings, practise them or take a test?",
     "Shall we add spellings, practise them or do a test?"
@@ -16,13 +16,17 @@
     "Let's add this week's spellings! Say add the word, then your word. Say finished when you're done.",
     "Ready to add words! Tell me each one like this: add the word because. Say finished when you're done."
   ],
-  "add_confirm": ["{Word}. {letters}. Is that correct?"],
+  "add_confirm": [
+    "{Word}. {letters}. Is that correct?"
+  ],
   "add_saved": [
     "Great! I've added {word} to your list. What's the next word?",
     "Done! {Word} is on your list. What's next?",
     "Got it, {word} is saved. Next word, or say finished."
   ],
-  "add_already": ["{Word} is already on your list! What's the next word?"],
+  "add_already": [
+    "{Word} is already on your list! What's the next word?"
+  ],
   "add_retry": [
     "Oops! Let's try again. Can you spell it for me, letter by letter?",
     "Sorry about that! Please spell the word for me, one letter at a time."
@@ -35,20 +39,35 @@
     "Brilliant! This week's list has {count} words. Would you like to practise them or take a test?",
     "All saved! You've got {count} words this week. Shall we practise them or do a test?"
   ],
-  "add_done_empty": ["Okay! We didn't add any new words. Would you like to practise or take a test?"],
-  "yes_or_no": ["Please say yes or no.", "Is that right? Yes or no?"],
+  "add_done_empty": [
+    "Okay! We didn't add any new words. Would you like to practise or take a test?"
+  ],
+  "yes_or_no": [
+    "Please say yes or no.",
+    "Is that right? Yes or no?"
+  ],
   "practice_intro": [
-    "Let's practise! There are {total} words.",
-    "Practice time! We've got {total} words to learn."
+    "Let's practise! There are {total} words. Spell each one a letter at a time, then say finished.",
+    "Practice time! We've got {total} words. Say the letters one by one, then say finished."
   ],
   "practice_word": [
     "Word {n} of {total} is {word}. {Word} is spelled {letters}. Now you try! Spell {word}.",
     "Here's word {n} of {total}: {word}. It's spelled {letters}. Your turn! Spell {word}."
   ],
-  "practice_slow": ["Okay, nice and slowly. {Word}. {slow_letters} Now you try!"],
-  "clue_1": ["Here's a clue. {Word} starts with {first} and has {length} letters.", "Clue time! It begins with {first}, and it has {length} letters."],
-  "clue_2": ["Another clue! It goes {pattern}.", "Here's a bigger clue: {pattern}."],
-  "clue_3": ["Last clue: {word} is spelled {letters}. Have a go!"],
+  "practice_slow": [
+    "Okay, nice and slowly. {Word}. {slow_letters} Now you try!"
+  ],
+  "clue_1": [
+    "Here's a clue. {Word} starts with {first} and has {length} letters.",
+    "Clue time! It begins with {first}, and it has {length} letters."
+  ],
+  "clue_2": [
+    "Another clue! It goes {pattern}.",
+    "Here's a bigger clue: {pattern}."
+  ],
+  "clue_3": [
+    "Last clue: {word} is spelled {letters}. Have a go!"
+  ],
   "practice_correct": [
     "Brilliant! That's exactly right!",
     "Yes! You spelled {word} perfectly!",
@@ -69,17 +88,29 @@
     "We've practised all {total} words, and {score} were right first time. Shall we do a test?"
   ],
   "test_intro": [
-    "Spelling test time! I'll say each word, and you spell it. There are {total} words.",
-    "Let's do a test! I'll say a word and you spell it. {total} words. Here we go!"
+    "Spelling test time! I'll say each word, and you spell it one letter at a time. Say finished when you're done. There are {total} words.",
+    "Let's do a test! I'll say a word, you spell it letter by letter, then say finished. {total} words. Here we go!"
   ],
-  "test_word": ["Word {n} of {total}: {word}. Spell {word}.", "Word {n} of {total}. Can you spell {word}?"],
-  "test_repeat_word": ["The word is {word}. Spell {word}."],
-  "test_correct": ["Correct! Well done!", "That's right!", "Yes! Spot on!", "Brilliant, that's correct!"],
+  "test_word": [
+    "Word {n} of {total}: {word}. Spell {word}.",
+    "Word {n} of {total}. Can you spell {word}?"
+  ],
+  "test_repeat_word": [
+    "The word is {word}. Spell {word}."
+  ],
+  "test_correct": [
+    "Correct! Well done!",
+    "That's right!",
+    "Yes! Spot on!",
+    "Brilliant, that's correct!"
+  ],
   "test_wrong": [
     "Good try! {Word} is spelled {letters}.",
     "Not quite, but well done for trying. It's {letters}."
   ],
-  "test_skip": ["No problem. {Word} is spelled {letters}. We'll practise it later."],
+  "test_skip": [
+    "No problem. {Word} is spelled {letters}. We'll practise it later."
+  ],
   "test_done_all": [
     "You got all {total} right! Amazing spelling!",
     "Wow, {total} out of {total}! Every single one!"
@@ -88,11 +119,82 @@
     "You got {score} out of {total}! Great effort. Let's practise {missed} again. Would you like to practise {them} now?",
     "{score} out of {total}, well done! The tricky {ones} {were} {missed}. Shall we practise {them} now?"
   ],
-  "test_stopped": ["Okay, we'll stop the test there. You got {score} out of {n}. Great effort!"],
-  "confirm_heard": ["I heard {letters}. Is that what you meant?", "Did you say {letters}?"],
-  "heard_retry": ["Okay, spell it again for me, letter by letter.", "No problem, try spelling it again."],
-  "nothing_heard": ["I didn't catch any letters. Try spelling it again, letter by letter."],
-  "start_again": ["Okay, let's start again from the beginning."],
-  "stop": ["Okay, we'll stop there. Great work today!", "All done! Brilliant spelling today."],
-  "no_thanks": ["Okay! Great work today.", "No problem. Brilliant effort today!"]
+  "test_stopped": [
+    "Okay, we'll stop the test there. You got {score} out of {n}. Great effort!"
+  ],
+  "nothing_heard": [
+    "I didn't catch any letters. Try spelling it again, letter by letter."
+  ],
+  "start_again": [
+    "Okay, let's go back to the first word."
+  ],
+  "stop": [
+    "Okay, we'll stop there. Great work today!",
+    "All done! Brilliant spelling today."
+  ],
+  "no_thanks": [
+    "Okay! Great work today.",
+    "No problem. Brilliant effort today!"
+  ],
+  "deleted": [
+    "Okay, I took off {removed}.",
+    "Done, {removed} is gone."
+  ],
+  "deleted_nothing": [
+    "There aren't any letters to delete yet. Spell {word} when you're ready."
+  ],
+  "cleared": [
+    "All cleared! Spell {word} from the start.",
+    "Okay, starting again. Spell {word}."
+  ],
+  "letters_please": [
+    "I need the letters one at a time, like B, E, C. Have another go!",
+    "Can you say the letters one by one for me?"
+  ],
+  "no_letters_yet": [
+    "I haven't heard any letters yet. Spell {word} one letter at a time.",
+    "No letters yet! Spell {word} for me, then say finished."
+  ],
+  "so_far": [
+    "So far you've got {so_far}.",
+    "You've got {so_far} so far."
+  ],
+  "no_letters_so_far": [
+    "You haven't said any letters yet."
+  ],
+  "repeat_word": [
+    "The word is {word}.",
+    "Your word is {word}."
+  ],
+  "test_no_clue": [
+    "No clues in a test! Have a go, or say skip.",
+    "It's a test, so no clues this time. Try your best, or say skip."
+  ],
+  "review": [
+    "You spelled {answer}. Is that right?",
+    "I've got {answer}. Is that what you meant?"
+  ],
+  "review_no": [
+    "Okay, let's fix it. Say delete to take off the last letter, or start again.",
+    "No problem. Say delete to rub out the last letter, or start again to clear them."
+  ],
+  "clarify_missing": [
+    "I didn't catch letter {n}. What was it? You can say it like {example}.",
+    "Sorry, I missed letter {n}. Can you tell me it again, like {example}?"
+  ],
+  "clarify_choice": [
+    "Was letter {n} {options}?",
+    "Just checking letter {n}. Was it {options}?"
+  ],
+  "clarify_one": [
+    "Was letter {n} {option}? Say yes, or tell me the right letter.",
+    "I think letter {n} was {option}. Is that right?"
+  ],
+  "clarify_which": [
+    "Okay, what was letter {n}? You can say it like {example}."
+  ],
+  "clarify_again": [
+    "Sorry, I still didn't catch letter {n}. Can you say it like {example}?",
+    "Hmm, I'm not sure about letter {n}. Try saying it like {example}."
+  ]
 }

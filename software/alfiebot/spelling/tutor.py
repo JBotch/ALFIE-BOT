@@ -1,8 +1,13 @@
 """The spelling tutor: adding words, learning mode and test mode.
 
 The robot passes text here while a spelling activity is running and says
-whatever ``Reply`` comes back. The tutor never judges an answer it isn't
-sure it heard: unclear spoken answers are read back for a yes/no first.
+whatever ``Reply`` comes back (``None`` means "say nothing, keep listening").
+
+Typed answers are marked straight away. Spoken answers are built up letter
+by letter (see ``letter_input``): the child spells, can say "delete" or
+"start again", and says "finished". Any letter the recogniser wasn't sure
+of is asked about, and the whole spelling is read back for a yes before it
+is marked, so a child is never marked wrong because of a mishearing.
 """
 
 import json
@@ -15,6 +20,8 @@ from typing import Dict, List, Optional
 from alfiebot.conversation.engine import Reply
 from alfiebot.conversation.intents import NO, YES, normalise
 from alfiebot.core.states import Expression
+from alfiebot.spelling.letter_input import (CHILD_WORDS, NATO_WORDS, Command, Letter, LetterSequence,
+                                           Unknown, confusable_with, parse_letters)
 from alfiebot.spelling.lists import SpellingLists, week_id
 from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.words import clean_word, parse_spelled_answer, spell_out
@@ -24,14 +31,9 @@ log = logging.getLogger(__name__)
 RESPONSES_PATH = Path(__file__).resolve().parent / "responses.json"
 PRACTICE_TRIES = 3  # wrong answers before moving on in learning mode
 
+# Ends adding words, or the menu (spelling answers have their own commands).
 CMD_STOP = re.compile(r"^(stop|finish|finished|end|quit|im done|i am done|thats enough|"
                       r"no more|done|thats all|that is all|all done|stop the test)\b")
-CMD_REPEAT = re.compile(r"\b(repeat|say (that|it) again|again|pardon|what did you say|what was the word)\b")
-CMD_SLOWER = re.compile(r"\b(slower|slowly|slow)\b")
-CMD_NEXT = re.compile(r"^(next|next word|skip|skip it|pass|move on)\b")
-CMD_CLUE = re.compile(r"\b(clue|hint|help me|help)\b")
-CMD_START_AGAIN = re.compile(r"\b(start again|start over|from the (start|beginning)|restart)\b")
-CMD_DONT_KNOW = re.compile(r"\b(i dont know|dont know|no idea|not sure|i give up)\b")
 ADD_WORD = re.compile(r"^(?:please )?(?:can you )?(?:add|put|save)(?: the)?(?: word)?\s+([a-z]+)\b")
 THE_WORD_IS = re.compile(r"^(?:the )?(?:next )?word is\s+([a-z]+)\b")
 CHOICES = [
@@ -39,6 +41,8 @@ CHOICES = [
     ("practice", re.compile(r"\b(practi[sc]e|learn|learning|go through)\b")),
     ("test", re.compile(r"\b(test|quiz)\b")),
 ]
+
+TYPED_COMMANDS = {"stop", "finish", "restart", "clear", "repeat", "slower", "next", "clue", "dont_know"}
 
 MODE_STATE = {"menu": "spelling_setup", "add": "spelling_setup", "after_test": "spelling_setup",
               "after_practice": "spelling_setup",
@@ -53,8 +57,11 @@ def load_responses(path=RESPONSES_PATH) -> dict:
 class SpellingTutor:
     def __init__(self, lists: SpellingLists, progress: ProgressTracker,
                  rng: random.Random = None, responses: dict = None,
-                 min_confidence: float = 0.75):
+                 min_confidence: float = 0.75, confirm_spoken: str = "always",
+                 phonetic: str = "child"):
         self.min_confidence = min_confidence
+        self.confirm_spoken = confirm_spoken  # "always" or "when_unsure"
+        self.phonetic = phonetic  # "child" (B for ball), "nato" (B for bravo) or "off"
         self.lists = lists
         self.progress = progress
         self.rng = rng or random.Random()
@@ -73,7 +80,7 @@ class SpellingTutor:
         self._tries = 0
         self._clue = 0
         self._pending_word: Optional[str] = None
-        self._pending_answer: Optional[str] = None
+        self._reset_answer()
         self._added: List[str] = []
         self._missed: List[str] = []
 
@@ -89,7 +96,7 @@ class SpellingTutor:
 
     @property
     def awaiting_yes_no(self) -> bool:
-        return self._pending_answer is not None or self._pending_word is not None
+        return self._pending_word is not None or self.stage in ("clarify", "review")
 
     @property
     def current_word(self) -> Optional[str]:
@@ -131,18 +138,18 @@ class SpellingTutor:
         self.mode = None
         self._reset_activity()
 
-    def handle(self, text: str, source: str = "typed", confidence: float = 1.0) -> Reply:
+    def handle(self, text: str, source: str = "typed", confidence: float = 1.0,
+               words=None) -> Optional[Reply]:
+        """``words`` is the recogniser's [(word, confidence)] list, if it has one."""
         norm = normalise(text)
-        if self.mode in ("practice", "test") and self._pending_answer is not None:
-            return self._handle_confirm_answer(norm)
+        if self.mode in ("practice", "test"):
+            if source == "typed":
+                return self._handle_typed(text, norm)
+            return self._handle_spoken(text, confidence, words)
         if self.mode == "add":
             return self._handle_add(text, norm, source, confidence)
         if CMD_STOP.search(norm):
             return self._finish_early()
-        if self.mode == "practice":
-            return self._handle_practice(text, norm, source, confidence)
-        if self.mode == "test":
-            return self._handle_test(text, norm, source, confidence)
         if self.mode == "after_test":
             return self._handle_after_test(norm)
         if self.mode == "after_practice":
@@ -231,27 +238,242 @@ class SpellingTutor:
         self._pending_word = word
         return self._say("add_confirm", word=word, mood=Expression.LISTENING)
 
-    # ---- answers ---------------------------------------------------------
-    def _read_answer(self, text, source, confidence):
-        answer = parse_spelled_answer(text, source, confidence, self.min_confidence)
-        if not answer.letters:
-            return None, self._say("nothing_heard", mood=Expression.CONFUSED)
-        if not answer.confident:
-            # Never mark wrong because the recogniser was unsure: check first.
-            self._pending_answer = answer.letters
-            return None, self._say("confirm_heard", letters=spell_out(answer.letters),
-                                   mood=Expression.LISTENING)
-        return answer.letters, None
+    # ---- typed answers -----------------------------------------------------
+    def _handle_typed(self, text: str, norm: str) -> Reply:
+        """Typing is exact, so a typed answer is marked straight away."""
+        word = self.words[self.index]
+        tokens = parse_letters(norm)
+        # A typed command ("next", "stop"...), unless it is simply the answer.
+        commands = [t.name for t in tokens if isinstance(t, Command) and t.name in TYPED_COMMANDS]
+        if commands and norm.replace(" ", "") != word and not any(isinstance(t, Letter) for t in tokens):
+            # Nothing is being built when typing, so "finished" means stop.
+            return self._command("stop" if commands[0] == "finish" else commands[0])
+        letters = re.sub(r"[^a-z]", "", text.lower())
+        if not letters:
+            return self._say("nothing_heard", mood=Expression.CONFUSED)
+        self._reset_answer()
+        return self._judge(letters)
 
-    def _handle_confirm_answer(self, norm: str) -> Reply:
-        if YES.search(norm):
-            letters = self._pending_answer
-            self._pending_answer = None
-            return self._judge(letters)
-        if NO.search(norm):
-            self._pending_answer = None
-            return self._say("heard_retry", mood=Expression.LISTENING)
-        return self._say("yes_or_no", mood=Expression.LISTENING)
+    # ---- spoken answers: letters build up until "finished" -----------------
+    def _reset_answer(self) -> None:
+        self.answer = LetterSequence(self.min_confidence)
+        self._stage = "spelling"
+        self._clarify_index: Optional[int] = None
+        self._clarify_options: List[str] = []
+
+    @property
+    def collecting_letters(self) -> bool:
+        """True while a spoken spelling is being built (and not yet checked)."""
+        return self.mode in ("practice", "test") and self._stage == "spelling" and len(self.answer) > 0
+
+    @property
+    def stage(self) -> Optional[str]:
+        """"spelling", "clarify" or "review" during practice and tests."""
+        return self._stage if self.mode in ("practice", "test") else None
+
+    def _handle_spoken(self, text, confidence, words) -> Optional[Reply]:
+        tokens = parse_letters(text, words, confidence)
+        if self._stage == "clarify":
+            return self._handle_clarify(tokens)
+        if self._stage == "review":
+            return self._handle_review(tokens)
+        return self._collect(tokens)
+
+    def _collect(self, tokens) -> Optional[Reply]:
+        """Add letters and run commands. Returns None when there is nothing to
+        say, so AlfieBot just keeps listening while the letters appear."""
+        has_letters = any(isinstance(t, Letter) for t in tokens)
+        unknown, note = [], None
+        for t in tokens:
+            if isinstance(t, Letter):
+                self.answer.add(t.letter, t.confidence, t.phonetic, t.heard)
+            elif isinstance(t, Unknown):
+                unknown.append(t.word)
+                if has_letters:
+                    # Something between letters that wasn't a letter: ask about it later.
+                    self.answer.add("?", 0.0, heard=t.word)
+            elif t.name == "delete":
+                note = ("deleted", self.answer.delete())
+            elif t.name == "clear":
+                self.answer.clear()
+                note = ("cleared", None)
+            elif t.name == "finish":
+                return self._answer_finished()
+            elif t.name in ("yes", "no", "first", "second", "third"):
+                continue
+            else:
+                return self._command(t.name)
+        word = self.words[self.index]
+        if note and note[0] == "deleted":
+            if note[1] is None:
+                return self._say("deleted_nothing", mood=Expression.LISTENING, word=word)
+            removed = "something" if note[1].letter == "?" else note[1].letter.upper()
+            return self._say_text(self._pick("deleted", removed=removed) + " " + self._so_far(),
+                                  mood=Expression.LISTENING)
+        if note:
+            return self._say("cleared", mood=Expression.LISTENING, word=word)
+        if unknown and not has_letters:
+            return self._say("letters_please", mood=Expression.CONFUSED, heard=" ".join(unknown))
+        return None
+
+    def finish_spoken_answer(self) -> Optional[Reply]:
+        """The child stopped spelling for a while: check what we have."""
+        if self.collecting_letters:
+            return self._answer_finished()
+        return None
+
+    def _so_far(self) -> str:
+        if not self.answer.letters:
+            return self._pick("no_letters_so_far")
+        return self._pick("so_far", so_far=_spoken(self.answer.text))
+
+    def _answer_finished(self) -> Reply:
+        if not self.answer.letters:
+            return self._say("no_letters_yet", mood=Expression.LISTENING, word=self.words[self.index])
+        index = self.answer.unsure_index()
+        if index is not None:
+            return self._clarify(index)
+        if self.confirm_spoken == "always":
+            return self._review()
+        return self._mark_answer()
+
+    def _review(self) -> Reply:
+        self._stage = "review"
+        return self._say("review", mood=Expression.LISTENING, answer=_spoken(self.answer.text))
+
+    def _mark_answer(self) -> Reply:
+        letters = self.answer.text
+        self._reset_answer()
+        return self._judge(letters)
+
+    # ---- unsure letters ------------------------------------------------------
+    def _phonetic(self, letter: str) -> str:
+        words = NATO_WORDS if self.phonetic == "nato" else CHILD_WORDS
+        if self.phonetic == "off":
+            return letter.upper()
+        return f"{letter.upper()} for {words[letter]}"
+
+    def _clarify(self, index: int, key: str = None) -> Reply:
+        """Ask about one letter. The choices come from letters that sound
+        alike, never from the word being tested."""
+        self._stage = "clarify"
+        self._clarify_index = index
+        heard = self.answer.letters[index]
+        n = index + 1
+        if heard.letter == "?":
+            self._clarify_options = []
+            return self._say(key or "clarify_missing", mood=Expression.CONFUSED, n=n,
+                             example=self._phonetic("b"))
+        self._clarify_options = confusable_with(heard.letter)
+        options = [self._phonetic(o) for o in self._clarify_options]
+        if key is None:
+            key = "clarify_choice" if len(options) > 1 else "clarify_one"
+        return self._say(key, mood=Expression.CONFUSED, n=n, options=_join(options, "or"),
+                         option=options[0], example=options[0])
+
+    def _handle_clarify(self, tokens) -> Reply:
+        index = self._clarify_index
+        heard = self.answer.letters[index]
+        letters = [t for t in tokens if isinstance(t, Letter)]
+        commands = [t.name for t in tokens if isinstance(t, Command)]
+        if "stop" in commands:
+            return self._finish_early()
+        if "clear" in commands:
+            self._reset_answer()
+            return self._say("cleared", mood=Expression.LISTENING, word=self.words[self.index])
+        if "delete" in commands and not letters:
+            del self.answer.letters[index]  # it wasn't a letter after all
+            return self._after_clarify()
+        picks = {"first": 0, "second": 1, "third": 2}
+        chosen = next((self._clarify_options[picks[c]] for c in commands
+                       if c in picks and picks[c] < len(self._clarify_options)), None)
+        if letters:
+            t = letters[0]
+            if t.phonetic or t.confidence >= self.min_confidence:
+                chosen = t.letter
+            else:
+                return self._clarify(index, "clarify_again")
+        if chosen:
+            heard.letter, heard.checked = chosen, True
+            return self._after_clarify()
+        if "yes" in commands and heard.letter != "?" and len(self._clarify_options) <= 1:
+            heard.checked = True
+            return self._after_clarify()
+        if "no" in commands or "yes" in commands:
+            return self._say("clarify_which", mood=Expression.LISTENING, n=index + 1,
+                             example=self._phonetic("b"))
+        return self._clarify(index, "clarify_again")
+
+    def _after_clarify(self) -> Reply:
+        index = self.answer.unsure_index()
+        if index is not None:
+            return self._clarify(index)
+        if not self.answer.letters:
+            self._stage = "spelling"
+            return self._say("no_letters_yet", mood=Expression.LISTENING, word=self.words[self.index])
+        return self._review()  # something was unsure, so always read it back
+
+    def _handle_review(self, tokens) -> Optional[Reply]:
+        commands = [t.name for t in tokens if isinstance(t, Command)]
+        has_letters = any(isinstance(t, Letter) for t in tokens)
+        if "stop" in commands:
+            return self._finish_early()
+        if not has_letters and ("yes" in commands or "finish" in commands):
+            return self._mark_answer()
+        if not has_letters and "no" in commands:
+            self._stage = "spelling"
+            return self._say_text(self._pick("review_no") + " " + self._so_far(), mood=Expression.LISTENING)
+        if not tokens or (not has_letters and not commands):
+            return self._say("yes_or_no", mood=Expression.LISTENING)
+        # More letters, "delete" or "start again": back to spelling.
+        self._stage = "spelling"
+        return self._collect(tokens)
+
+    # ---- commands while spelling ----------------------------------------
+    def _command(self, name: str) -> Optional[Reply]:
+        word = self.words[self.index]
+        practice = self.mode == "practice"
+        if name == "stop":
+            return self._finish_early()
+        if name == "restart" and practice:
+            self.index = 0
+            self.results = {}
+            self._reset_answer()
+            return self._say_text(self._pick("start_again") + " " + self._practice_prompt())
+        if name in ("clear", "restart"):
+            self.answer.clear()
+            self._stage = "spelling"
+            return self._say("cleared", mood=Expression.LISTENING, word=word)
+        if name == "delete":
+            return self._collect([Command("delete")])
+        if name == "finish":
+            return self._answer_finished()
+        if name == "slower" and practice:
+            return self._say("practice_slow", word=word)
+        if name in ("repeat", "slower"):
+            lead = self._pick("repeat_word", word=word)
+            if self.answer.letters:
+                lead += " " + self._so_far()
+            return self._say_text(lead, mood=Expression.LISTENING)
+        if name == "readback":
+            return self._say_text(self._so_far(), mood=Expression.LISTENING)
+        if name == "next" or (name == "dont_know" and not practice):
+            self._reset_answer()
+            if practice:
+                self.results.setdefault(word, False)
+                return self._next_practice_word("")
+            self.progress.record_attempt(word, False, "test", "")
+            self.results[word] = False
+            return self._next_test_word(self._pick("test_skip", word=word))
+        if name in ("clue", "dont_know"):
+            if not practice:
+                return self._say("test_no_clue", mood=Expression.LISTENING)
+            self._clue = min(self._clue + 1, 3)
+            pattern = "-".join(c.upper() if i < max(1, len(word) // 2) else "_"
+                               for i, c in enumerate(word))
+            return self._say(f"clue_{self._clue}", word=word, first=word[0].upper(),
+                             length=len(word), pattern=pattern)
+        return None
 
     def _judge(self, letters: str) -> Reply:
         if self.mode == "practice":
@@ -264,30 +486,6 @@ class SpellingTutor:
         self._tries = 0
         self._clue = 0
         return self._pick("practice_word", word=word, n=self.index + 1, total=len(self.words))
-
-    def _handle_practice(self, text, norm, source, confidence) -> Reply:
-        word = self.words[self.index]
-        if CMD_START_AGAIN.search(norm):
-            self.index = 0
-            self.results = {}
-            return self._say_text(self._pick("start_again") + " " + self._practice_prompt())
-        if CMD_SLOWER.search(norm):
-            return self._say("practice_slow", word=word)
-        if CMD_REPEAT.search(norm):
-            return self._repeat()
-        if CMD_NEXT.search(norm):
-            self.results.setdefault(word, False)
-            return self._next_practice_word("")
-        if CMD_CLUE.search(norm) or CMD_DONT_KNOW.search(norm):
-            self._clue = min(self._clue + 1, 3)
-            pattern = "-".join(c.upper() if i < max(1, len(word) // 2) else "_"
-                               for i, c in enumerate(word))
-            return self._say(f"clue_{self._clue}", word=word, first=word[0].upper(),
-                             length=len(word), pattern=pattern)
-        letters, reply = self._read_answer(text, source, confidence)
-        if reply:
-            return reply
-        return self._practice_answer(letters)
 
     def _practice_answer(self, letters: str) -> Reply:
         word = self.words[self.index]
@@ -320,20 +518,6 @@ class SpellingTutor:
     def _test_prompt(self) -> str:
         word = self.words[self.index]
         return self._pick("test_word", word=word, n=self.index + 1, total=len(self.words))
-
-    def _handle_test(self, text, norm, source, confidence) -> Reply:
-        word = self.words[self.index]
-        if CMD_REPEAT.search(norm) or CMD_SLOWER.search(norm):
-            return self._say("test_repeat_word", word=word, mood=Expression.LISTENING)
-        if CMD_NEXT.search(norm) or CMD_DONT_KNOW.search(norm):
-            self.progress.record_attempt(word, False, "test", "")
-            self.results[word] = False
-            lead = self._pick("test_skip", word=word)
-            return self._next_test_word(lead)
-        letters, reply = self._read_answer(text, source, confidence)
-        if reply:
-            return reply
-        return self._test_answer(letters)
 
     def _test_answer(self, letters: str) -> Reply:
         word = self.words[self.index]
@@ -384,12 +568,6 @@ class SpellingTutor:
         return self._handle_menu(norm, norm)
 
     # ---- shared -------------------------------------------------------------
-    def _repeat(self) -> Reply:
-        if self.last_reply is None:
-            return self._say("menu_question")
-        r = self.last_reply
-        return Reply(r.text, "spelling_repeat", r.mood, r.then)
-
     def _save_session(self) -> None:
         if self.mode in ("practice", "test") and self.results:
             self.progress.record_session(self.mode, self.week or self.active_week, dict(self.results))
@@ -421,7 +599,12 @@ class SpellingTutor:
         return reply
 
 
-def _join(words: List[str]) -> str:
+def _join(words: List[str], last: str = "and") -> str:
     if len(words) <= 1:
         return "".join(words)
-    return ", ".join(words[:-1]) + " and " + words[-1]
+    return ", ".join(words[:-1]) + f" {last} " + words[-1]
+
+
+def _spoken(letters: str) -> str:
+    """'bec?' -> 'B-E-C-_' (the speech engine says each letter, and "blank" for _)."""
+    return "-".join("_" if c == "?" else c.upper() for c in letters)

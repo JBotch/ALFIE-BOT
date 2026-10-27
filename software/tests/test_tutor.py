@@ -84,8 +84,8 @@ def test_learning_next_and_start_again(tutor):
     tutor.start("practice")
     tutor.handle("next word")
     assert tutor.current_word == "friend"
-    r = tutor.handle("start again")
-    assert tutor.current_word == "because" and "beginning" in r.text
+    r = tutor.handle("restart")
+    assert tutor.current_word == "because" and "first word" in r.text
 
 
 def test_learning_moves_on_after_three_tries(tutor):
@@ -129,33 +129,34 @@ def test_all_correct_test_celebrates_and_finishes(tutor):
     assert not tutor.active and r.then == "listen"
 
 
-def test_unsure_answer_is_confirmed_not_marked_wrong(tutor):
+def test_spoken_answer_is_read_back_before_marking(tutor):
     with_words(tutor, "because")
     tutor.start("test")
-    r = tutor.handle("bee ee see ay you ess ee", "voice", confidence=0.4)
-    assert "Is that what you meant" in r.text or "Did you say" in r.text
+    assert tutor.handle("bee ee see ay you ess ee", "voice", confidence=0.95) is None
+    r = tutor.handle("finished", "voice")
+    assert "B-E-C-A-U-S-E" in r.text and "right" in r.text or "meant" in r.text
     assert tutor.progress.word("because")["attempts"] == 0  # nothing marked yet
-    r = tutor.handle("no")
+    r = tutor.handle("no", "voice")
     assert tutor.progress.word("because")["attempts"] == 0
-    assert tutor.current_word == "because"  # same word, try again
-    tutor.handle("bee ee see ay you ess ee", "voice", confidence=0.95)
+    assert tutor.current_word == "because"  # same word, fix it
+    tutor.handle("finished", "voice")
+    tutor.handle("yes", "voice")
     assert tutor.progress.word("because")["correct"] == 1
 
 
-def test_confirmed_answer_is_marked(tutor):
+def test_whole_word_spoken_asks_for_letters(tutor):
     with_words(tutor, "because", "friend")
     tutor.start("practice")
-    tutor.handle("because", "voice")  # whole word spoken: unclear
-    r = tutor.handle("yes")
-    assert r.celebrate
-    assert tutor.progress.word("because")["correct"] == 1
+    r = tutor.handle("because", "voice")
+    assert "letter" in r.text.lower()
+    assert tutor.progress.word("because")["attempts"] == 0
 
 
 def test_test_repeat_word_and_skip(tutor):
     with_words(tutor, "because", "friend")
     tutor.start("test")
     word = tutor.current_word
-    assert tutor.handle("say it again").text == f"The word is {word}. Spell {word}."
+    assert word in tutor.handle("say it again").text
     r = tutor.handle("I don't know")
     assert "-".join(word.upper()) in r.text
     assert tutor.progress.word(word)["incorrect"] == 1

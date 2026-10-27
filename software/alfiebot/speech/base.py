@@ -1,15 +1,17 @@
 """Abstract speech interfaces."""
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import List, Optional, Tuple
 
 
 @dataclass
 class RecognitionResult:
     text: str
-    confidence: float = 1.0  # 0..1; typed input is always 1.0
+    confidence: float = 1.0  # 0..1 for the whole result; typed input is always 1.0
     source: str = "voice"
+    # [(word, confidence)] when the recogniser scores each word (Vosk does).
+    words: List[Tuple[str, float]] = field(default_factory=list)
 
 
 class SpeechRecognizer(ABC):

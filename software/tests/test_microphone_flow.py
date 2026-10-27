@@ -7,7 +7,7 @@ from alfiebot.core.robot import AlfieBot
 from alfiebot.core.states import RobotState
 from alfiebot.hardware.simulator import create_simulator_platform
 from alfiebot.speech.base import RecognitionResult, SpeechRecognizer
-from alfiebot.spelling.words import SPELLING_GRAMMAR
+from alfiebot.spelling.letter_input import letter_grammar
 
 
 class FakeRecognizer(SpeechRecognizer):
@@ -40,8 +40,8 @@ class FakeRecognizer(SpeechRecognizer):
     def poll(self):
         return self.queue.pop(0) if self.queue else None
 
-    def hear(self, text, confidence=0.95):
-        self.queue.append(RecognitionResult(text, confidence, "voice"))
+    def hear(self, text, confidence=0.95, words=None):
+        self.queue.append(RecognitionResult(text, confidence, "voice", words or []))
 
 
 def make_robot(allowed=True, mode="open"):
@@ -142,14 +142,42 @@ def test_spelling_answers_use_the_letter_grammar_and_unsure_answers_are_checked(
     robot.spelling_lists.add_words(robot.tutor.active_week, ["because"])
     robot.start_spelling("test")
     until_listening(robot)
-    assert mic.grammar == SPELLING_GRAMMAR
-    mic.hear("bee ee see ay you ess ee", confidence=0.5)
+    assert mic.grammar == letter_grammar("child")
+    assert robot.recognition_mode == "letters"
+    said = len(robot_lines(robot))
+    # One unsure letter: "bee ee see ay you ESS? ee".
+    words = [(w, 0.95) for w in "bee ee see ay you".split()] + [("ess", 0.4), ("ee", 0.95)]
+    mic.hear("bee ee see ay you ess ee", words=words)
+    robot.update(1 / 30)
+    assert robot.state == RobotState.SPELLING_TEST and mic.listening  # silent, still listening
+    assert len(robot_lines(robot)) == said
+    letters, _ = robot.spelling_letters()
+    assert "".join(l for l, _ in letters) == "BECAUSE" and letters[5] == ("S", False)
+    mic.hear("finished")
     robot.update(1 / 30)
     until_listening(robot)
-    assert "B-E-C-A-U-S-E" in robot_lines(robot)[-1]  # "I heard ... Is that what you meant?"
+    assert "letter 6" in robot_lines(robot)[-1] and "S for sun" in robot_lines(robot)[-1]
     assert robot.progress.word("because")["attempts"] == 0
-    assert mic.grammar is None  # free speech for the yes/no
+    mic.hear("s for sun")
+    robot.update(1 / 30)
+    until_listening(robot)
+    assert "B-E-C-A-U-S-E" in robot_lines(robot)[-1]  # read back before marking
     mic.hear("yes")
     robot.update(1 / 30)
     until_listening(robot)
     assert robot.progress.word("because")["correct"] == 1
+
+
+def test_pause_after_letters_reads_them_back():
+    robot, mic = make_robot()
+    robot.spelling_lists.add_words(robot.tutor.active_week, ["cat"])
+    robot.start_spelling("practice")
+    until_listening(robot)
+    mic.hear("see ay tee")
+    robot.update(1 / 30)
+    said = len(robot_lines(robot))
+    tick(robot, robot.finish_after_pause - 0.5)
+    assert len(robot_lines(robot)) == said
+    tick(robot, 1.5)
+    assert "C-A-T" in robot_lines(robot)[-1]
+    assert robot.progress.word("cat")["attempts"] == 0

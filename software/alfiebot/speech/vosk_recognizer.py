@@ -179,7 +179,8 @@ def parse_result(raw: str) -> Optional[RecognitionResult]:
     text = " ".join(w for w in data.get("text", "").split() if w != "[unk]")
     if text.lower() in IGNORED:
         return None
-    words = data.get("result") or []
-    confidences = [w.get("conf", 1.0) for w in words if w.get("word") != "[unk]"]
+    words = [(w.get("word", ""), float(w.get("conf", 1.0))) for w in data.get("result") or []
+             if w.get("word") not in (None, "[unk]")]
+    confidences = [c for _, c in words]
     confidence = sum(confidences) / len(confidences) if confidences else 1.0
-    return RecognitionResult(text=text, confidence=confidence, source="voice")
+    return RecognitionResult(text=text, confidence=confidence, source="voice", words=words)

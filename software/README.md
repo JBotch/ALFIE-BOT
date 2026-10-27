@@ -4,14 +4,73 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.4, Stage 4 of 5: AlfieBot talks and listens.**
+**Version 0.5: spelling recognition upgrade** (Stage 4 of 5, plus the
+first half of the speech recognition and voice upgrade).
 
-> Tested on Linux with Python 3.13 and pygame 2.6.1 (176 automated tests,
+> Tested on Linux with Python 3.13 and pygame 2.6.1 (all automated tests,
 > plus headless launches of both apps, and the espeak-ng voice). The speech
-> recogniser was tested with stand-in audio only, because the test machine
-> has no microphone and couldn't download the speech model. Stages 1 to 3
-> also ran on Windows 11 with Python 3.13. **It has not been run on Raspberry
-> Pi hardware yet.** The Pi-specific code (GPIO button) is written but untested.
+> recogniser was tested with stand-in recognition results only, because the
+> test machine has no microphone and couldn't download the speech model.
+> Version 0.4 also ran on Windows 11 with Python 3.13 and a real microphone.
+> **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
+> (GPIO button) is written but untested.
+
+## What version 0.5 adds: spelling recognition
+
+Conversation and spelling are now recognised differently. While Alfie
+spells a word in practice or a test:
+
+- **Letters appear under AlfieBot's eyes as they are heard**, one box per
+  letter: blue = heard clearly, amber = AlfieBot will check it, grey = still
+  being heard. The same letters show in the panel.
+- Letters can be said **one at a time or in short runs** ("bee ee see",
+  pause, "ay you ess ee"). "Double s" works. AlfieBot stays quiet while the
+  letters build up.
+- **Spoken commands while spelling:** "delete" (rub out the last letter),
+  "start again" (clear them all), "repeat" (say the word again; the letters
+  are kept), "finished" (check it), "what have I got" (read them back),
+  "stop". In practice there are also "clue", "slower", "skip" and
+  "restart" (back to the first word).
+- **Unsure letters are asked about, never guessed.** Each letter has its own
+  confidence score from the recogniser. If one is low, AlfieBot asks about
+  that letter, offering the letters that sound alike: "Was letter 2 B for
+  ball, D for dog or P for pig?" Alfie can answer "D", "D for dog", "dog" or
+  "the second one". Anything that wasn't a letter shows as "?" and gets
+  asked about too.
+- **Read back before marking.** After "finished" (or 5 seconds of quiet),
+  AlfieBot reads the letters back ("You spelled B-E-C-A-U-S-E. Is that
+  right?") and only marks it after a yes. After a no, Alfie can say
+  "delete", "start again" or more letters.
+- **AlfieBot never uses the target word to fix what it heard**, so a
+  mishearing can't turn a wrong spelling into a right one, and an unsure
+  letter can't turn a right spelling into a wrong one.
+- **Typing still works** as before and is marked straight away.
+- **Letter recognition test** (panel button **Letter test**, or
+  `python tools/letter_test.py`): shows letters one at a time, records what
+  was heard, the confidence, the recognition time, whether AlfieBot would
+  have asked, and the final answer. It saves results (never audio) in
+  `data/letter_tests/` and reports accuracy, the most common mix-ups, the
+  letters that sound alike (B/D/P, C/G/T, M/N, F/S, A/H/J), and results by
+  speaker and speed.
+- Panel: "Listening for: letters" or "conversation", the last thing heard
+  with its confidence, and the letters so far. **Simulated speech** has
+  **As: speech** (typed text behaves like the microphone, so letters build
+  up) and **Conf: low** (pretend the recogniser was unsure).
+
+Settings in `config/alfiebot.json`, section `spelling`:
+`confirm_spoken_answers` (`always`, or `when_unsure` to skip the read-back
+when every letter was clear), `phonetic_words` (`child` = "B for ball",
+`nato` = "B for bravo", `off`) and `finish_after_pause` (seconds; 0 = wait
+for "finished").
+
+**What we found about the recogniser (Vosk):** it supports a restricted
+word list (used: letter names, "B for ball" words and the commands) and a
+confidence score per word (used). It can also give alternative guesses
+(`SetMaxAlternatives`), but then it only scores whole sentences, not single
+letters, so per-letter scores were the better choice. With a restricted word
+list the recogniser sometimes picks a wrong letter with high confidence.
+That's why AlfieBot reads every spoken spelling back before marking it by
+default, and why the letter test reports "wrong but sure" separately.
 
 ## What Stage 4 adds
 
@@ -38,8 +97,7 @@ Raspberry Pi 5.
   for a while without changing the parent setting.
 - **Spelling by voice:** while waiting for a spelling answer, the
   recogniser only listens for letter names and tutor commands, which makes
-  letters much easier to recognise. Unsure answers are read back for a yes
-  or no before marking (from Stage 3).
+  letters much easier to recognise (improved in version 0.5, above).
 - `python tools/check_speech.py` tests the voice and microphone on their
   own (says a sentence, lists microphones, listens for 5 seconds).
 
@@ -242,10 +300,31 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel, T or Enter | Simulated speech | Type what you would say, or click a quick phrase |
 | Panel or F11 | Face full screen | Face only; F11 or Esc returns |
 | Panel | Lists / Add by voice / Practise / Test | Spelling lists and progress window, or start an activity |
+| Panel | Letter test | Letter recognition test and report |
+| Panel | As: typing/speech, Conf: high/low | Send simulated speech as typing (marked at once) or as speech (letters build up), sure or unsure |
 | Panel | Delete local data | Click twice to delete the `data/` folder (spelling lists and progress) |
 | Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
 
-## What to test before Stage 5
+## What to test in version 0.5
+
+1. Simulator: click **Allow mic**, then **Test** (or **Practise**). Spell the
+   word letter by letter. Watch the letters appear under the eyes.
+2. Say a wrong letter, then "delete". Say "start again". Say "repeat".
+3. Say "finished". AlfieBot should read your letters back and only mark the
+   word after you say yes.
+4. Mumble one letter, or say B and D carelessly. AlfieBot should ask about
+   that letter ("B for ball, D for dog or P for pig?").
+5. Say "no" at the read-back and fix the spelling.
+6. Type an answer instead: it should be marked straight away.
+7. Click **Letter test**, type a speaker name, pick **All**, then **Start**.
+   Say each letter. Repeat with **Confusing** and **Slow**/**Fast**, and with
+   Alfie as the speaker. **Report of all tests** sums them all up
+   (or run `python tools/letter_test.py --report`).
+8. No microphone? Set **As: speech** under Simulated speech and type letters
+   like "bee ee see", "delete", "finished". **Conf: low** makes AlfieBot
+   unsure so you can see the questions.
+
+## Stage 4 checks
 
 1. Run `python tools/check_speech.py`. You should hear AlfieBot speak, see
    your microphone listed, and see what you say written out.
@@ -255,9 +334,7 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
    AlfieBot talks"), then the red dot comes on. Say "I'm good", "How are
    you?", "Tell me a joke". Watch the level meter and "Hearing:" line.
 4. Check AlfieBot never answers its own voice, even with the speakers loud.
-5. Practise and test spellings by voice, spelling letter by letter ("bee ee
-   see..."). If it mishears, it should ask "did you say...?" rather than mark
-   you wrong.
+5. Practise and test spellings by voice (see the version 0.5 checks above).
 6. Switch **Mode** to "hold button" and talk while holding Space.
 7. Press Space while AlfieBot is talking: it should stop mid-word.
 8. Try a different voice: on Windows set `"voice": "Hazel"` (or another
@@ -322,6 +399,8 @@ software/
   config/alfiebot.json     settings, including the parent/privacy section
   examples/                example weekly spelling list
   tools/render_expressions.py   saves a PNG of every expression
+  tools/check_speech.py    tests the voice and microphone on their own
+  tools/letter_test.py     letter recognition test and report
   tests/                   automated tests (pytest)
   alfiebot/
     main.py                entry point and command-line options
@@ -330,9 +409,11 @@ software/
     face/                  poses (numbers per expression), engine (animation), renderer (pygame)
     speech/                base.py (interfaces), tts.py (Windows voice, espeak-ng),
                            vosk_recognizer.py (offline mic), text.py (letters for speech),
-                           mic_gate.py keeps the mic deaf while AlfieBot talks
+                           mic_gate.py keeps the mic deaf while AlfieBot talks,
+                           letter_test.py (letter recognition test and report)
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
-    spelling/              words.py (letters, spoken letter names), lists.py (weekly lists),
+    spelling/              words.py (letters, spoken letter names), letter_input.py (spoken
+                           spelling: letters, commands, unsure letters), lists.py (weekly lists),
                            progress.py, tutor.py (add / learn / test), responses.json
     hardware/              simulator vs Raspberry Pi (button), auto-detected
     storage/               local JSON files (atomic writes, delete all)

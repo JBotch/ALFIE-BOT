@@ -43,6 +43,12 @@
     "mic_device": "",
     "min_confidence": 0.75
   },
+  "spelling": {
+    "_comment": "How spoken spellings are checked. confirm_spoken_answers: always (AlfieBot reads the letters back for a yes before marking) or when_unsure (only when a letter was unclear). phonetic_words: child (B for ball), nato (B for bravo) or off, used when AlfieBot asks about an unclear letter. finish_after_pause: seconds of quiet after some letters before AlfieBot checks them (0 = wait for 'finished').",
+    "confirm_spoken_answers": "always",
+    "phonetic_words": "child",
+    "finish_after_pause": 5.0
+  },
   "hardware": {
     "button_gpio_pin": 17
   },

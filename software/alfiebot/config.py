@@ -45,6 +45,11 @@ DEFAULTS = {
         "mic_device": None,
         "min_confidence": 0.75,
     },
+    "spelling": {
+        "confirm_spoken_answers": "always",
+        "phonetic_words": "child",
+        "finish_after_pause": 5.0,
+    },
     "hardware": {"button_gpio_pin": 17},
     "privacy": {"microphone_enabled": False, "keep_audio_recordings": False},
     "data_dir": "data",

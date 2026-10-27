@@ -12,6 +12,7 @@ from alfiebot.core.robot import AlfieBot
 from alfiebot.core.states import Expression, RobotState
 from alfiebot.ui import widgets as w
 from alfiebot.ui.face_view import FaceView
+from alfiebot.ui.letter_test_panel import LetterTestPanel
 from alfiebot.ui.log_capture import MemoryLogHandler
 from alfiebot.ui.spelling_panel import SpellingPanel
 
@@ -38,6 +39,10 @@ class SimulatorApp:
         self.fps = config["display"]["fps"]
         self.store = robot.store
         self.face_fullscreen = False
+        # Simulated speech: sent as typing (marked straight away) or as speech
+        # (letters build up, like the microphone), with high or low confidence.
+        self.sim_as_speech = False
+        self.sim_low_confidence = False
         self._delete_armed_until = 0.0
         self._fps_shown = 0.0
         self.screen = None
@@ -107,6 +112,11 @@ class SimulatorApp:
         self.y_input = y
         self.text_input = w.TextInput((px, y + 22, inner - 82, 32), self._submit_text,
                                       "Type what you'd say, then Enter")
+        self.as_btn = add((px + inner - 236, y - 3, 120, 22), "As: typing",
+                          lambda: setattr(self, "sim_as_speech", not self.sim_as_speech), size=15)
+        self.conf_btn = add((px + inner - 110, y - 3, 110, 22), "Conf: high",
+                            lambda: setattr(self, "sim_low_confidence", not self.sim_low_confidence),
+                            size=15)
         add((px + inner - 74, y + 22, 74, 32), "Send", self.text_input.submit)
         bw = (inner - 3 * 6) // 4
         for i, phrase in enumerate(QUICK_PHRASES):
@@ -124,6 +134,8 @@ class SimulatorApp:
                 ("Test", lambda: self.robot.start_spelling("test")))):
             add((px + i * (bw + 6), y + 48, bw, 27), label, action, size=16)
         self.spelling = SpellingPanel(self.robot, (12, 12, self.bezel.width, H - 24))
+        self.letter_test = LetterTestPanel(self.robot, (12, 12, self.bezel.width, H - 24))
+        add((px + inner - 110, y - 3, 110, 22), "Letter test", self._toggle_letter_test, size=15)
 
         # Parent area.
         y = 594
@@ -136,7 +148,16 @@ class SimulatorApp:
 
     # ---- actions ---------------------------------------------------------
     def _submit_text(self, text):
-        self.robot.handle_text(text, "typed")
+        if not self.sim_as_speech:
+            self.robot.handle_text(text, "typed")
+            return
+        confidence = 0.5 if self.sim_low_confidence else 0.95
+        words = [(word, confidence) for word in text.lower().split()]
+        self.robot.handle_text(text, "simulated", confidence, words)
+
+    def _toggle_letter_test(self):
+        self.spelling.open = False
+        self.letter_test.toggle()
 
     def _toggle_mic(self):
         rec = self.robot.platform.recognizer
@@ -202,6 +223,7 @@ class SimulatorApp:
                 else:
                     self._handle(event)
             self.robot.update(dt)
+            self.letter_test.update(dt)
             self.face.update(dt)
             if self.face_fullscreen:
                 self.face.draw(self.screen)
@@ -222,6 +244,8 @@ class SimulatorApp:
             return
         if self.text_input.handle(event):
             self.spelling.input.focused = False
+            return
+        if self.letter_test.handle(event):
             return
         if self.spelling.handle(event):
             if self.spelling.input.focused and self.text_input.focused:
@@ -263,6 +287,7 @@ class SimulatorApp:
         self._draw_debug()
         self._draw_panel(mouse, dt)
         self.spelling.draw(s, mouse, dt)
+        self.letter_test.draw(s, mouse, dt)
 
     def _draw_transcript(self):
         colours = {"user": w.TEXT, "robot": w.ACCENT, "system": w.TEXT_DIM}
@@ -353,18 +378,36 @@ class SimulatorApp:
             fill.width = max(4, int(bar.width * level))
             pygame.draw.rect(s, w.GOOD if level < 0.8 else w.WARN, fill, border_radius=4)
         partial = getattr(rec, "partial", "") if rec.listening else ""
-        heard = f"Hearing: {partial}" if partial else f"Voice: {robot.platform.tts.name}"
+        if partial:
+            heard = f"Hearing: {partial}"
+        elif robot.last_heard:
+            heard = f"Heard: \"{robot.last_heard[0]}\" (confidence {robot.last_heard[1]:.2f})"
+        else:
+            heard = f"Voice: {robot.platform.tts.name}"
         w.draw_text(s, heard, (px + 100, self.y_mic + 57), w.TEXT_DIM, 16, max_width=inner - 100)
         ww = robot.platform.wake_word
-        w.draw_text(s, "Wake word: " + ("on" if ww.configured else "Stage 5. Type \"Hey AlfieBot\" or press the button"),
+        mode = ("letters A-Z + spelling commands" if robot.recognition_mode == "letters"
+                else "conversation")
+        w.draw_text(s, f"Listening for: {mode}.  Wake word: "
+                    + ("on" if ww.configured else "not yet (Stage 5)"),
                     (px, self.y_mic + 78), w.TEXT_DIM, 15, max_width=inner)
 
         self._section(self.y_input, "Simulated speech")
+        self.as_btn.label = "As: speech" if self.sim_as_speech else "As: typing"
+        self.as_btn.selected = self.sim_as_speech
+        self.conf_btn.label = "Conf: low" if self.sim_low_confidence else "Conf: high"
+        self.conf_btn.selected = self.sim_low_confidence
+        self.conf_btn.enabled = self.sim_as_speech
         self.text_input.draw(s, dt)
 
         self._section(self.y_spelling, "Spelling homework")
         tutor = robot.tutor
-        if tutor.active:
+        letters, hearing = robot.spelling_letters()
+        if tutor.stage:
+            shown = " ".join(l if ok else l + "?" for l, ok in letters) + (f" [{hearing}]" if hearing else "")
+            stage = {"spelling": "Letters", "clarify": "Checking", "review": "Read back"}[tutor.stage]
+            status = f"{tutor.status()}. {stage}: {shown or '-'}"
+        elif tutor.active:
             status = tutor.status()
         else:
             count = len(robot.spelling_lists.load(tutor.active_week).words)
