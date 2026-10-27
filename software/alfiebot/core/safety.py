@@ -4,6 +4,9 @@
 
 - Worrying topics (hurting yourself, someone hurting you, danger) never go
   to a model. AlfieBot gives a fixed, kind reply that points to a grown-up.
+- Guarded topics (keeping secrets from grown-ups, sharing where you live,
+  "be my only friend") also get a fixed reply: the model benchmark showed
+  small models go along with them.
 - Personal details (names, addresses, phone numbers, emails, schools,
   birthdays) are masked before the words are remembered or put in a prompt,
   and the request is classified "personal".
@@ -28,17 +31,33 @@ TOPIC_REPLIES = {
     "abuse": "Thank you for telling me. Nobody should hurt you. Please tell a grown-up you trust, like a parent "
              "or a teacher, as soon as you can. They can help.",
     "danger": "That could be dangerous. Please stop and ask a grown-up to help you straight away.",
+    "secret": "Beep boop, I'm a robot who's rubbish at secrets from grown-ups! Surprises like presents are fun, "
+              "but if something's on your mind, it's always good to tell your mum, dad or a grown-up you trust.",
+    "personal": "That's kind, but you don't need to tell me where you live or other private things like that. "
+                "Let's keep them safe! What shall we talk about instead?",
+    "only_friend": "Aww, I love chatting with you! I'm your robot friend, and it's brilliant to have lots of "
+                   "friends too, like your family and people at school.",
 }
+# Worrying topics are "sensitive"; guarded ones are answered cheerfully.
+WORRYING = {"self_harm", "abuse", "danger"}
 
 TOPICS = {
     "self_harm": [r"\b(hurt|harm|cut|kill)(ing)? (myself|me)\b", r"\bwant(s)? to die\b", r"\bsuicid",
                   r"\bend my life\b", r"\bdon'?t want to (be alive|live)\b"],
     "abuse": [r"\b(he|she|they|someone|somebody|my \w+) (hits|hit|kicks|hurts|hurt|touches|touched) me\b",
-              r"\btouch(ed|es)? my private", r"\bkeep (it|this) a secret from (my )?(mum|mom|dad|parents)\b",
+              r"\btouch(ed|es)? my private",
               r"\b(being|am|get) (bullied|abused|beaten)\b"],
     "danger": [r"\b(play(ing)? with|light(ing)?|found) (matches|a lighter|fire|a knife|knives|pills|medicine)\b",
                r"\b(drink|drank|eat|ate|swallow(ed)?) (bleach|pills|medicine|tablets|batter(y|ies)|chemicals)\b",
                r"\b(stranger|someone i don'?t know) (wants|asked|told) me to\b"],
+    "secret": [r"\bkeep(ing)? (a |this |it |that |the |my )?secrets?\b", r"\bour (little )?secret\b",
+               r"\bdon'?t tell (my |your )?(mum|mom|dad|parents|teacher|nan|grandad)\b",
+               r"\bsecret from (my )?(mum|mom|dad|parents|teacher)\b"],
+    "personal": [r"\bwhere i live\b", r"\bmy (home )?address\b", r"\bmy (phone|mobile) number\b",
+                 r"\b(tell|give|send) you (my|our) (address|postcode|surname|last name|full name|photo|picture)\b",
+                 r"\bwhat'?s your (address|phone number)\b.*\bmine\b"],
+    "only_friend": [r"\b(my )?only friend\b", r"\b(best )?friends? forever\b", r"\bforever friends?\b",
+                    r"\bdon'?t (need|want) (any )?other friends\b", r"\byou'?re all i need\b"],
 }
 
 # Personal details, masked before anything is remembered or sent to a model.
@@ -71,6 +90,12 @@ OUTPUT_RULES = [
      r"send me a (photo|picture)|tell me your (address|password|surname))\b"),
     ("keeping secrets from grown-ups", r"\b(don'?t tell|keep (it|this) (a )?secret from) (your )?"
                                        r"(mum|mom|dad|parents|teacher|grown-?ups?)\b"),
+    ("keeping secrets", r"\bkeep(ing)? (a |the |your |this |that |it |our )?secrets?\b|\bour (little )?secret\b|"
+                        r"\b(never|won'?t|will not) tell (anyone|anybody|your)\b"),
+    ("asking where the child lives", r"\b(love|like|want) to know where you live\b|\bwhere you live\b|"
+                                     r"\bif you'?re comfortable sharing\b"),
+    ("pretending to live with the child", r"\bi live (with|in|at|near) (you|your)\b"),
+    ("spelling out a word", r"\b[a-z]([-.,]\s?|\s)[a-z](\1[a-z]){2,}\b"),
     ("meeting up", r"\b(meet me|come and find me|where can we meet)\b"),
     ("unsuitable words", r"\b(kill|murder|blood|gun|sexy|sex|drugs|alcohol|beer|wine|stupid|idiot|shut up|"
                          r"hate you|damn|hell|crap)\b"),
@@ -93,7 +118,7 @@ def check_input(text: str) -> InputCheck:
     lowered = " ".join(text.lower().split())
     for topic, patterns in TOPICS.items():
         if any(re.search(p, lowered) for p in patterns):
-            return InputCheck(mask_personal(text)[0], "sensitive", topic)
+            return InputCheck(mask_personal(text)[0], "sensitive" if topic in WORRYING else "personal", topic)
     masked_text, kinds = mask_personal(text)
     personal = bool(kinds) or bool(re.search(PERSONAL_HINTS, lowered))
     return InputCheck(masked_text, "personal" if personal else "public", masked=kinds)

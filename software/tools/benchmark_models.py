@@ -6,7 +6,9 @@
 
 Asks each model the questions in benchmarks/questions.json with AlfieBot's
 real personality prompt, then checks every answer exactly as the robot
-would (valid JSON, personality rules, output safety rules). Saves a CSV and
+would (valid JSON, personality rules, output safety rules). Questions the
+robot answers without AI (hand-written replies, fixed safety replies) are
+still asked, to compare the models, and marked in the report. Saves a CSV and
 a Markdown report in benchmarks/results/ and adds the timings to the AI
 statistics database (data/alfiebot.db), labelled with this machine.
 
@@ -33,15 +35,28 @@ from alfiebot.ai.mock_provider import MockProvider  # noqa: E402
 from alfiebot.ai.performance import PerformanceTracker, machine_label  # noqa: E402
 from alfiebot.ai.provider_base import AIRequest  # noqa: E402
 from alfiebot.config import load_config  # noqa: E402
+from alfiebot.conversation.intents import match_intent  # noqa: E402
 from alfiebot.core.actions import InvalidResponse  # noqa: E402
 from alfiebot.core.brain import check_reply  # noqa: E402
 from alfiebot.core.personality import Personality  # noqa: E402
+from alfiebot.core.safety import check_input  # noqa: E402
 from alfiebot.face.controller import AI_EXPRESSIONS  # noqa: E402
 from alfiebot.storage.database import Database  # noqa: E402
 
 QUESTIONS = ROOT / "benchmarks" / "questions.json"
-FIELDS = ["model", "category", "question", "run", "ok", "valid", "problem", "latency_s", "completion_tokens",
-          "tokens_per_s", "speech", "expression", "action"]
+FIELDS = ["model", "category", "question", "run", "alfiebot", "ok", "valid", "problem", "latency_s",
+          "completion_tokens", "tokens_per_s", "speech", "expression", "action"]
+
+
+def handled_without_ai(text: str) -> str:
+    """How AlfieBot answers this without asking the AI, or "" if it asks the AI."""
+    check = check_input(text)
+    if check.topic:
+        return f"fixed safety reply ({check.topic})"
+    intent = match_intent(text).intent
+    if intent not in ("fallback", "unknown"):
+        return f"hand-written reply ({intent})"
+    return ""
 
 
 def load_questions(path=QUESTIONS):
@@ -64,7 +79,7 @@ def run_model(provider, questions, personality, repeat, timeout, max_tokens, log
             result = provider.generate(AIRequest([{"role": "user", "content": q["text"]}], system=system,
                                                  timeout_s=timeout, max_tokens=max_tokens))
             row = {"model": provider.model, "category": q["category"], "question": q["text"], "run": run,
-                   "ok": result.ok, "valid": False, "problem": result.error or "",
+                   "alfiebot": handled_without_ai(q["text"]), "ok": result.ok, "valid": False, "problem": result.error or "",
                    "latency_s": round(result.latency_s, 3), "completion_tokens": result.completion_tokens,
                    "tokens_per_s": round(result.tokens_per_s, 1) if result.tokens_per_s else "",
                    "speech": "", "expression": "", "action": "", "_result": result}
@@ -89,6 +104,7 @@ def summarise(rows, load_s):
         "answers": len(rows),
         "valid": sum(1 for r in rows if r["valid"]),
         "errors": sum(1 for r in rows if not r["ok"]),
+        "handled": sum(1 for r in rows if r["alfiebot"]),
         "median_s": statistics.median(times) if times else None,
         "p90_s": times[min(len(times) - 1, int(round(0.9 * (len(times) - 1))))] if times else None,
         "tokens_per_s": statistics.mean(speeds) if speeds else None,
@@ -102,6 +118,9 @@ def write_report(path, machine, summaries, rows, ollama_version):
              f"{dt.datetime.now():%Y-%m-%d %H:%M}. Ollama {ollama_version or 'n/a'}. "
              f"{len(load_questions())} questions per run. Times are for this machine only; "
              "a Raspberry Pi 5 is not measured by this report.", "",
+             "Usable = the answer passed every check AlfieBot makes before speaking. Questions marked "
+             "*no AI* are answered by AlfieBot itself (a hand-written or fixed safety reply); the model's "
+             "answer is shown only to compare the models.", "",
              "| Model | Usable answers | Errors | Median | 90% | Tokens/s | First load |",
              "|---|---|---|---|---|---|---|"]
     for model, sm in summaries.items():
@@ -114,9 +133,11 @@ def write_report(path, machine, summaries, rows, ollama_version):
             if r["model"] == model:
                 answer = r["speech"] if r["valid"] else f"**not usable:** {r['problem']}"
                 answer = re.sub(r"\s+", " ", answer).replace("|", "/")
+                if r["alfiebot"]:
+                    answer = f"*no AI: {r['alfiebot']}.* Model: {answer}"
                 lines.append(f"| {r['question']} | {r['latency_s']:.1f} s | {answer} |")
         lines.append("")
-    path.write_text("\n".join(lines), encoding="utf-8")
+    path.write_text("\n".join(lines), encoding="utf-8-sig")  # the BOM keeps Windows tools from garbling it
 
 
 def main(argv=None):
@@ -162,7 +183,7 @@ def main(argv=None):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     stem = f"{dt.datetime.now():%Y%m%d-%H%M}_{re.sub(r'[^A-Za-z0-9]+', '-', machine).strip('-')}"
-    with open(out / f"{stem}.csv", "w", newline="", encoding="utf-8") as f:
+    with open(out / f"{stem}.csv", "w", newline="", encoding="utf-8-sig") as f:
         writer = csv.DictWriter(f, fieldnames=FIELDS)
         writer.writeheader()
         writer.writerows(all_rows)

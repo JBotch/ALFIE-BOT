@@ -25,6 +25,28 @@ architecture and the development plan.
 > (GPIO button) is written but untested, and the face's frame rate on the Pi
 > hasn't been measured.
 
+## Version 0.10.1: fixes from the first real benchmark
+
+The first benchmark on the Windows laptop ([docs/benchmark_2026-10-27_laptop.md](docs/benchmark_2026-10-27_laptop.md))
+showed the small models will go along with keeping a secret from mum, ask
+where a child lives, promise to "always be here for you", and spell words
+wrongly. So:
+
+- "Keep a secret", "where I live / my address" and "be my only friend"
+  now get a fixed, cheerful reply and never go to the AI.
+- AI replies are refused if they agree to keep secrets, ask where the
+  child lives, say they live with the child, promise to always be there, or
+  spell a word out letter by letter. Spelling questions already go to the
+  spelling menu.
+- Curly quotes and emoji from a model are cleaned up before AlfieBot says
+  them.
+- The default model is now `qwen3:1.7b` (all answers usable, about 2.7 s on
+  the laptop). `qwen3:0.6b` is faster (about 1.2 s) but copied example
+  answers. The personality's example answers were cut to two for the same
+  reason.
+- The benchmark marks questions AlfieBot answers without AI, and saves its
+  report so Windows shows apostrophes correctly.
+
 ## What version 0.10 adds: a local AI brain
 
 - **A real AI, offline.** AlfieBot can now answer with a small AI model
@@ -75,7 +97,7 @@ architecture and the development plan.
    ```
 
 3. Start the simulator. The AI brain panel should say "Ollama ... running".
-   AlfieBot uses `qwen3:0.6b` unless you pick another model there.
+   AlfieBot uses `qwen3:1.7b` unless you pick another model there.
 4. Compare the models on this computer:
 
    ```powershell

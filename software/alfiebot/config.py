@@ -66,7 +66,7 @@ DEFAULTS = {
         "enabled": True,
         "mode": "local_only",
         "local_provider": "ollama",
-        "local_model": "qwen3:0.6b",
+        "local_model": "qwen3:1.7b",
         "ollama_url": "http://localhost:11434",
         "cloud_enabled": False,
         "timeout_s": 12.0,

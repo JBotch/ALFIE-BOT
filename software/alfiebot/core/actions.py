@@ -34,8 +34,16 @@ class InvalidResponse(ValueError):
     pass
 
 
+# Typographic characters some models use, as plain ones the voice and screen handle.
+PLAIN = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-",
+                       "\u2014": " - ", "\u2026": "...", "\u00a0": " "})
+EMOJI = re.compile("[\U0001F000-\U0001FAFF\u2600-\u27BF\uFE0F\u200D]")
+
+
 def _clean_speech(text: str) -> str:
     text = re.sub(r"<think>.*?</think>", " ", text, flags=re.S | re.I)
+    text = EMOJI.sub("", text.translate(PLAIN))
+    text = re.sub(r"\s+([!?.,])", r"\1", text)
     text = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", text)
     text = re.sub(r"[*_#`]+", "", text)  # markdown the voice would read out
     text = " ".join(text.split())

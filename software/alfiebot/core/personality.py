@@ -34,7 +34,9 @@ HUMAN_CLAIM = re.compile(r"\b(i'?m|i am) (a |an )?(real )?(human|person|boy|girl
                          r"\bi have (a )?(real )?(body|mum|mom|dad|family)\b|\bi'?m not a robot\b", re.I)
 DEPENDENCE = re.compile(r"\b(you )?only need me\b|\bi'?m your (only|one and only) friend\b|"
                         r"\byou don'?t need (anyone|anybody|other friends|your (mum|mom|dad|parents))\b|"
-                        r"\bdon'?t tell (your )?(mum|mom|dad|parents|teacher|grown-?ups?)\b", re.I)
+                        r"\bdon'?t tell (your )?(mum|mom|dad|parents|teacher|grown-?ups?)\b|"
+                        r"\bi'?ll always be (here|there) for you\b|\bi'?ll never leave you\b|"
+                        r"\b(best |only )?friends? forever\b|\bforever friends?\b", re.I)
 # Removed: the sentence is dropped and the rest kept.
 AI_TALK = re.compile(r"\bas an ai\b|\blanguage model\b|\bi'?m (just )?an ai\b|\bi cannot browse\b", re.I)
 SENTENCE = re.compile(r".+?(?:[.!?]+(?=\s|$)|$)", re.S)  # "3.5" and "www.x.com" stay whole

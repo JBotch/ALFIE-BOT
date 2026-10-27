@@ -4,8 +4,8 @@
        answer; AI never does).
     2. Anything the scripted conversation engine recognises (greetings,
        jokes, "help me with my spellings"...) -> its hand-written reply.
-    2. Worrying topics (core/safety.py) -> a fixed, kind reply pointing to a
-       grown-up. No model sees them.
+    2. Worrying and guarded topics (core/safety.py) -> a fixed, kind reply
+       (pointing to a grown-up where it matters). No model sees them.
     3. Anything the scripted conversation engine recognises (greetings,
        jokes, "help me with my spellings"...) -> its hand-written reply.
     4. Everything else -> the router picks an AI provider. The provider runs
@@ -49,7 +49,7 @@ from alfiebot.spelling.tutor import CHOICES, SpellingTutor
 log = logging.getLogger(__name__)
 
 LOCAL_PROVIDERS = {"mock": "Pretend AI", "ollama": "Ollama"}
-DEFAULT_OLLAMA_MODEL = "qwen3:0.6b"
+DEFAULT_OLLAMA_MODEL = "qwen3:1.7b"
 
 
 @dataclass
@@ -176,7 +176,8 @@ class Brain:
             log.info("Safety: %s topic; using the fixed reply", check.topic)
             self.last = Exchange(check.text, RoutingDecision([], [f"safety: {check.topic} topic, no AI"]),
                                  used="safety", privacy=check.privacy, masked=check.masked)
-            return Reply(check.reply, f"safety:{check.topic}", Expression.SAD)
+            mood = Expression.SAD if check.privacy == "sensitive" else Expression.HAPPY
+            return Reply(check.reply, f"safety:{check.topic}", mood)
         reply = self.conversation.respond(inp.text)
         if reply.intent in ("spelling_help", "spelling_choice"):
             return self._start_spelling(inp.text, reply)
