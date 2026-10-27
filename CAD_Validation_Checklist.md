@@ -1,9 +1,8 @@
 # AlfieBot V0.1: CAD validation checklist
 
-> **Current status: NOT EXECUTED IN FUSION.** The generator was written in
-> an environment without Autodesk Fusion. Nothing below has been confirmed
-> against real Fusion geometry yet. Fill in the "Result" columns after the
-> first run.
+> **Current status:** Stages F and H were applied to the live Fusion design
+> and checked there (sections below). A full fresh run of the generator has
+> not been done, so the automated-check table is still to fill in.
 
 ## What has been checked so far (outside Fusion)
 
@@ -11,7 +10,7 @@
 |---|---|---|
 | Python syntax and undefined names | `py_compile`, `pyflakes` | Clean |
 | Every script code path runs without Python errors | Mocked `adsk` module (stand-in objects, no geometry) | All stages, validation and the flex test ran to completion. This proves control flow only. |
-| Layout maths: envelopes, A1 Mini fit, parts inside the cavity, features on flat faces, FDM walls, fastenings | `python offline_layout_check.py --flex` | 70/70 rules pass at the defaults. With the flex edits, `face_width = 130 mm` fails the bezel-boss rule and `body_width = 175 mm` warns on bezel screw access (see Design_Parameters.md) |
+| Layout maths: envelopes, A1 Mini fit, parts inside the cavity, features on flat faces, FDM walls, fastenings, electronics fit | `python offline_layout_check.py --flex` | 116/116 rules pass at the defaults and with every flex edit |
 
 What these do **not** prove: that each Fusion API call behaves as
 expected in your Fusion build, that fillets, shells and combines succeed,
@@ -36,7 +35,7 @@ summary. Copy the results here.
 | 9 | Rear cover and bezel separate | Each is its own component with its own bodies | ☐ |
 | 10 | Design rules on the live parameters | The same rules as the offline checker, using the parameter values read from Fusion | ☐ |
 | 11 | Timeline health | Every timeline item reports a healthy state | ☐ |
-| 12 | Parameter edits do not break the model | Flex test: `body_width` 175, `body_depth` 110, `corner_radius` 18, `speaker_diameter` 38, `face_width` 130, one at a time, then restored | ☐ |
+| 12 | Parameter edits do not break the model | Flex test: `body_width` 175, `body_depth` 110, `corner_radius` 18, `speaker_diameter` 36, `face_width` 130, one at a time, then restored | ☐ |
 
 Watch for these **WARN lines in the build log**:
 - `hole feature removed no material; using extrude cut instead`: the hole
@@ -88,14 +87,64 @@ Manual checks for the fastenings:
 | F5 | Feet | Section through a foot: counterbore, floor hole and tray insert line up | ☐ |
 | F6 | Test print | Print a small coupon of one boss and fit an insert before printing the full body | ☐ |
 
+## Electronics added in Fusion (25 Oct 2026)
+
+Stage H was applied to the saved `AlfieBot_V0.1` design in Fusion through
+the Fusion connector, with the same parameters as the generator. A
+checkpoint version was saved first.
+
+Offline electronics checks (all pass): every part inside the cavity, no
+part overlapping another, display corners clear of the rounded front
+edges, Pi and cooler clear of the top wall and tray, USB-C plug clear of
+the button retainer, cable clear of everything along its route to the floor exit,
+mic 2.5 mm clear of the left speaker magnet, speakers clear of the ring
+edge, switch legs inside the retainer pocket.
+
+Checked afterwards in Fusion:
+
+| Check | Result |
+|---|---|
+| Each build step (brackets, display and Pi, speakers and clamps, amp and cradle, switch, PSU and mic) | All built without errors (about 330 new timeline items) |
+| Timeline health | No unhealthy items. Only the retired features (tray Pi standoffs and the old side-bracket screw cuts) are suppressed |
+| Interference across all 23 components, 48 bodies (coincident faces excluded), after the power cable reroute | None |
+| Bezel screw paths | Solid bracket (top) and tray upright (bottom) behind each bezel boss, with the clearance hole on the boss axis, at X = ±50 |
+| Joints | As-built rigid joints from Main_Body to every new part |
+
+Fix made during the check: in the existing design the two Front_Bezel boss
+features kept their old profiles (beside the display) after the upgrade,
+although their sketches moved, so the bosses hit the display. They were
+suppressed and rebuilt as `Bezel insert bosses v2` and `Bezel insert holes v2`
+on the same construction points. A fresh generator run builds them in the
+right place directly.
+
+Power cable reroute (25 Oct 2026, design version 6): the rear cover
+opening was removed. The cable now runs over the top, through a snap clip
+under the top wall, down behind the Pi, along the tray under the screwed
+Cable_Clamp, and out through a tray slot and a Main_Body floor notch, then
+away under the rear cover. Checked in Fusion: no interference, timeline
+healthy, rear cover solid where the opening was, clip bore and opening
+clear with the ring solid round them, floor notch and tray slot open,
+clamp and amp insert holes and screw holes on their boss axes. The amp
+was moved forward 5 mm (`amp_center_y` 7 mm) to make room for the clamp.
+
+Manual checks for the electronics:
+
+| # | Check | How | Result |
+|---|---|---|---|
+| E1 | Display | Measure the real panel edge thickness (assumed 6.6 mm) and where the Pi standoffs sit on the back | ☐ |
+| E2 | Speakers | Measure the real speaker depth, rim thickness and magnet diameter (assumed 20, 2.5, Ø28) | ☐ |
+| E3 | USB-C plug | Measure the plug body and cable (assumed 12 × 7 × 26 plug, Ø3.5 cable) | ☐ |
+| E4 | Switch feel | Print the retainer and cap. Press the cap: a clear click, no rattle, returns fully | ☐ |
+| E5 | Test fit | Fit the Pi, cooler and plug on the display before printing the body | ☐ |
+| E6 | Power cable | Snap the real cable into the clip (should click in and not slide freely), and check the clamp grips it without crushing it | ☐ |
+
 ## Known unresolved issues (to report against)
 
-1. The accent rings and speaker grilles are still a press fit (no screws or snaps).
-2. The display dimensions are placeholders.
-3. A Raspberry Pi 5 board (85 × 56) does not fit flat on the 55.4 mm deep tray. Mounting is to be decided in Prototype 2.
-4. Horizontal holes in Main_Body (speakers, button) need support or a teardrop shape when printed upright.
-5. Speaker drivers, button switch, microphone, cable channels and screen mount are not modelled.
-6. The derived `rear_cover_depth = corner_radius + 2 mm` couples the rear cover depth to the corner radius.
+1. Some electronics sizes are estimates (display edge, Pi standoff position, speaker depth, USB-C plug). See E1 to E3.
+2. One MAX98357A is mono: wire the two speakers in series or add a second amp.
+3. Horizontal holes in Main_Body (speakers, button) and the top display brackets need light support when printed upright.
+4. Cable channels other than the power cable are not modelled.
+5. The derived `rear_cover_depth = corner_radius + 2 mm` couples the rear cover depth to the corner radius.
 
 ## Failure log
 

@@ -18,6 +18,9 @@ Build order (matches the V0.1 development stages)
     Stage D  Top button and feet
     Stage E  Rear cover and electronics tray
     Stage F  Fastenings: M3 screw bosses, heat-set insert holes, button retainer
+    Stage H  Electronics mock-ups (Touch Display 2, Pi 5 + Active Cooler, PSU
+             plug, microphone, speakers, amplifier, 12 mm tactile switch) and
+             the brackets, clamps and cradles that hold them
     Stage G  Appearances, joints, view and validation
 
 Coordinate system
@@ -69,6 +72,12 @@ RUN_PARAMETER_FLEX_TEST = True  # Temporarily edits parameters, then restores th
 # for designs generated before the fastenings existed. Existing parameter
 # values are kept; missing parameters are added with their defaults.
 ADD_FASTENINGS_TO_ACTIVE_DESIGN = False
+# Add only Stage H (electronics) to an AlfieBot design that already has the
+# fastenings: updates the changed parameters, re-points the bezel window and
+# button retainer sketches, suppresses the old tray Pi standoffs and the
+# unused side-bracket screw holes, then builds Stage H.
+ADD_ELECTRONICS_TO_ACTIVE_DESIGN = False
+SHOW_MESSAGE_BOX = True         # Summary dialog at the end (off when run remotely)
 REPORT_FILE_NAME = "AlfieBot_Validation_Report.txt"
 
 # ---------------------------------------------------------------------------
@@ -442,6 +451,29 @@ class PartBuilder:
         self.fillet(edges, radius, body_name + " corners")
         return self.body(body_name)
 
+    def revolve(self, profiles, axis_line, name):
+        """Full 360 degree revolve of `profiles` about a sketch line; returns the new body."""
+        revolves = self.feats.revolveFeatures
+        prof = profiles[0] if len(profiles) == 1 else collection(profiles)
+        rev_input = revolves.createInput(prof, axis_line, NEW)
+        rev_input.setAngleExtent(False, vi("360 deg"))
+        feature = revolves.add(rev_input)
+        feature.name = name
+        return feature.bodies.item(0)
+
+    def pipe(self, path_curve, diameter, name, chain=False):
+        """Solid round section along a sketch curve (or its connected chain); None (logged) if refused."""
+        try:
+            pipes = self.feats.pipeFeatures
+            pipe_input = pipes.createInput(self.feats.createPath(path_curve, chain), NEW)
+            pipe_input.sectionSize = vi(diameter)
+            feature = pipes.add(pipe_input)
+            feature.name = name
+            return feature.bodies.item(0)
+        except Exception as exc:  # noqa: BLE001
+            log("%s: pipe failed (%s); skipped" % (name, exc), "WARN")
+            return None
+
     def hole(self, sk, sketch_point, diameter, depth, body_name, name):
         """Hole feature at a sketch point, falling back to an extrude cut.
 
@@ -552,7 +584,7 @@ def stage_b_front(ctx):
         "bezel_thickness", Y_POS, "face_corner_radius - assembly_clearance", "Front_Bezel")
     window = bz.rounded_prism(
         "y", "-body_depth/2 + face_recess - 1 mm", centre,
-        {"x": "display_width/2 - display_overlap", "z": "display_height/2 - display_overlap"},
+        {"x": "display_window_width/2", "z": "display_window_height/2"},
         "bezel_thickness + 2 mm", Y_POS, "display_window_radius", "Display window tool")
     bz.combine(bz.body("Front_Bezel"), [window], CUT, "Display window")
 
@@ -786,15 +818,7 @@ def build_electronics_tray(t):
         x = side_expr(sign, "tray_width/2 - tray_rail_width/2")
         t.rect(sk, t.project(sk, t.anchor(x=x)), {"x": "tray_rail_width/2", "y": "tray_depth/2"})
     t.extrude(t.profiles(sk), "tray_rail_height", Z_POS, JOIN, [t.body(name)], name="Tray rails")
-
-    # Raspberry Pi 5 standoff: one seed, rectangular pattern 2 x 2.
-    sk = t.sketch("z", top, "Standoff seed")
-    c = t.project(sk, t.anchor(x="-pi_hole_spacing_x/2", y="-pi_hole_spacing_y/2"))
-    t.circle(sk, c, "standoff_diameter")
-    t.circle(sk, c, "standoff_hole_diameter")
-    standoff = t.extrude(t.profiles(sk, loops=2), "standoff_height", Z_POS, JOIN, [t.body(name)], name="Standoff")
-    t.rect_pattern([standoff], t.comp.xConstructionAxis, "2", "pi_hole_spacing_x", "Standoff pattern",
-                   t.comp.yConstructionAxis, "2", "pi_hole_spacing_y")
+    # The Raspberry Pi 5 mounts on the back of the display (Stage H), not on the tray.
 
 
 # ---------------------------------------------------------------------------
@@ -802,9 +826,11 @@ def build_electronics_tray(t):
 #
 #   Rear_Cover   -> Main_Body : 4 x M3 x 16 from the rear face, inserts in
 #                               corner bosses just in front of the split.
-#   Front_Bezel  -> Main_Body : 4 x M3 x 8 from inside, through brackets on
-#                               the side walls into inserts in bosses on the
-#                               bezel back. The brackets also back up the display.
+#   Front_Bezel  -> Main_Body : 4 x M3 x 8 into inserts in bosses on the bezel
+#                               back, above and below the display. The screws
+#                               go through brackets added in Stage H (top wall
+#                               and tray). Shelves on the side walls back up
+#                               the display corners.
 #   Button_Retainer -> Main_Body : 2 x M3 x 8 into bosses under the top wall.
 #                               The plate carries the tactile switch and stops
 #                               the button falling in.
@@ -911,8 +937,8 @@ def bezel_fastenings(ctx):
     bz.extrude(bz.circles(sk, centres, "insert_hole_diameter"), "insert_depth", Y_NEG, CUT,
                [bz.body("Front_Bezel")], name="Bezel insert holes")
 
-    # Main_Body brackets from each side wall, behind the display, with a
-    # 45 degree underside so they print without support (front face up).
+    # Main_Body shelves from each side wall, behind the display corners, with
+    # a 45 degree underside so they print without support (front face up).
     b = ctx.b("Main_Body")
     y0 = back
     y1 = "%s + bezel_bracket_thickness" % y0
@@ -931,17 +957,7 @@ def bezel_fastenings(ctx):
             body.name = "%s %d" % (sk.name, i + 1)
             bodies.append(body)
     join_inside_enclosure(b, bodies, "Bezel brackets")
-
-    centres = [b.anchor(x=side_expr(sx, "bezel_screw_x"), y=y0,
-                        z="face_center_z %s bezel_screw_dz" % ("+" if sz > 0 else "-")) for sx, sz in quadrants()]
-    sk = b.sketch("y", y0, "Bezel screw clearance")
-    b.extrude(b.circles(sk, centres, "screw_clearance_diameter"), "bezel_bracket_thickness + 1 mm", Y_POS, CUT,
-              [b.body("Main_Body")], name="Bezel screw clearance")
-    centres = [b.anchor(x=side_expr(sx, "bezel_screw_x"), y=y1,
-                        z="face_center_z %s bezel_screw_dz" % ("+" if sz > 0 else "-")) for sx, sz in quadrants()]
-    sk = b.sketch("y", y1, "Bezel screw access")
-    b.extrude(b.circles(sk, centres, "screw_head_clearance_diameter"), "(%s) - (%s) + 1 mm" % (xo, xi), Y_POS, CUT,
-              [b.body("Main_Body")], name="Bezel screw access")
+    # The screw holes go through the Stage H brackets.
 
 
 def button_retainer(ctx):
@@ -961,7 +977,7 @@ def button_retainer(ctx):
     t = ctx.b("Button_Retainer")
     sk = t.sketch("z", "button_retainer_z", "Retainer plate")
     t.rect(sk, t.project(sk, t.anchor(y="module_center_y", z="button_retainer_z")),
-           {"x": "button_screw_x + insert_boss_diameter/2 + 2 mm", "y": "insert_boss_diameter/2 + 2 mm"})
+           {"x": "button_screw_x + insert_boss_diameter/2 + 2 mm", "y": "button_switch_size/2 + 2.5 mm"})
     ext = t.extrude(t.profiles(sk), "button_retainer_thickness", Z_NEG, NEW, name="Retainer plate")
     ext.bodies.item(0).name = "Button_Retainer"
     centres = [t.anchor(x=side_expr(sx, "button_screw_x"), y="module_center_y", z="button_retainer_z") for sx in (-1, 1)]
@@ -1002,6 +1018,381 @@ def feet_and_tray_fastenings(ctx):
 
 
 # ---------------------------------------------------------------------------
+# Stage H - electronics mock-ups and the parts that hold them
+#
+#   Touch Display 2 (5 inch) : clamped between the bezel and two brackets on
+#                               the top wall plus two uprights on the tray;
+#                               4 x M3 x 8 through them into the bezel inserts.
+#   Raspberry Pi 5           : on the standoffs on the display back with the
+#                               4 x M2.5 screws supplied with the display.
+#   Speakers                 : each clamped onto its accent ring by a printed
+#                               clamp, 2 x M3 x 8 into side-wall inserts. The
+#                               clamp also holds the ring and grille in place.
+#   I2S amplifier            : in a cradle on the tray under a two-tab clamp,
+#                               2 x M3 x 8 into tray inserts.
+#   12 mm tactile switch     : in a pocket in the button retainer, legs
+#                               through the retainer; the button cap rests on
+#                               its plunger.
+#   PSU lead                 : through an opening in the rear cover.
+#   USB microphone           : in the lower USB port nearest the floor.
+# ---------------------------------------------------------------------------
+
+ELECTRONICS_MARKER = "Top bezel brackets"  # Main_Body combine name; present once Stage H exists
+
+
+def stage_h_electronics(ctx):
+    display_brackets(ctx)
+    display_and_pi(ctx)
+    speakers_and_clamps(ctx)
+    amplifier_and_cradle(ctx)
+    top_switch(ctx)
+    psu_and_microphone(ctx)
+    cable_retention(ctx)
+
+
+def display_brackets(ctx):
+    y0, y1 = "display_back_y", "display_back_y + bezel_bracket_thickness"
+    screw_top, screw_bottom = "face_center_z + bezel_screw_dz", "face_center_z - bezel_screw_dz"
+    sides = [(sx, side_expr(sx, "bezel_screw_x")) for sx in (-1, 1)]
+
+    # Main_Body: brackets hanging from the top wall onto the display top edge,
+    # with a 45 degree back face so they print without support (front face up).
+    b = ctx.b("Main_Body")
+    z_in = "face_center_z + display_height/2 - bezel_bracket_overlap"
+    z_out = "body_top_z + 1 mm"
+    y2 = "%s + (%s) - (%s)" % (y1, z_out, z_in)
+    bodies = []
+    for sx, x in sides:
+        sk = b.sketch("x", x, "Top bezel bracket %s" % ("right" if sx > 0 else "left"))
+        b.polygon(sk, [b.anchor(x=x, y=y0, z=z_in), b.anchor(x=x, y=y0, z=z_out),
+                       b.anchor(x=x, y=y2, z=z_out), b.anchor(x=x, y=y1, z=z_in)])
+        ext = b.extrude_symmetric(b.profiles(sk), "bezel_bracket_width", NEW, name=sk.name + " blank")
+        ext.bodies.item(0).name = sk.name
+        bodies.append(ext.bodies.item(0))
+    join_inside_enclosure(b, bodies, ELECTRONICS_MARKER)
+    sk = b.sketch("y", y0, "Top bezel screw clearance")
+    b.extrude(b.circles(sk, [b.anchor(x=x, y=y0, z=screw_top) for _, x in sides], "screw_clearance_diameter"),
+              "bezel_bracket_thickness + 1 mm", Y_POS, CUT, [b.body("Main_Body")], name="Top bezel screw clearance")
+    sk = b.sketch("y", y1, "Top bezel screw access")
+    b.extrude(b.circles(sk, [b.anchor(x=x, y=y1, z=screw_top) for _, x in sides], "screw_head_clearance_diameter"),
+              "(%s) - (%s) + 1 mm" % (z_out, z_in), Y_POS, CUT, [b.body("Main_Body")], name="Top bezel screw access")
+
+    # Electronics_Tray: uprights at its front edge onto the display bottom
+    # edge, with a 45 degree underside over the curved floor.
+    t = ctx.b("Electronics_Tray")
+    ya = "-tray_depth/2 + 1 mm"
+    z_tip = "face_center_z - display_height/2 + bezel_bracket_overlap"
+    z_low = "tray_z + (%s) - (%s)" % (ya, y0)
+    bodies = []
+    for sx, x in sides:
+        sk = t.sketch("x", x, "Bezel upright %s" % ("right" if sx > 0 else "left"))
+        t.polygon(sk, [t.anchor(x=x, y=ya, z="tray_z"), t.anchor(x=x, y=y0, z=z_low),
+                       t.anchor(x=x, y=y0, z=z_tip), t.anchor(x=x, y=ya, z=z_tip)])
+        ext = t.extrude_symmetric(t.profiles(sk), "bezel_bracket_width", NEW, name=sk.name + " blank")
+        ext.bodies.item(0).name = sk.name
+        bodies.append(ext.bodies.item(0))
+    t.combine(t.body("Electronics_Tray"), bodies, JOIN, "Bezel uprights")
+    sk = t.sketch("y", ya, "Bezel upright screw clearance")
+    t.extrude(t.circles(sk, [t.anchor(x=x, y=ya, z=screw_bottom) for _, x in sides], "screw_clearance_diameter"),
+              "(%s) - (%s) + 1 mm" % (ya, y0), Y_NEG, CUT, [t.body("Electronics_Tray")], name="Bezel upright screw clearance")
+    sk = t.sketch("y", ya, "Bezel upright counterbores")
+    t.extrude(t.circles(sk, [t.anchor(x=x, y=ya, z=screw_bottom) for _, x in sides], "screw_head_clearance_diameter"),
+              "(%s) - (%s)" % (ya, y1), Y_NEG, CUT, [t.body("Electronics_Tray")], name="Bezel upright counterbores")
+
+
+def pi_x(u_expression):
+    """Assembly X of a Pi 5 board coordinate u (measured from the end opposite the ports)."""
+    return "pi_center_x + pi_board_length/2 - (%s)" % u_expression
+
+
+def pi_z(v_expression):
+    """Assembly Z of a Pi 5 board coordinate v (measured from the USB-C edge, which is at the top)."""
+    return "pi_top_z - (%s)" % v_expression
+
+
+def mock_block(b, plane_axis, plane_expression, centre, half, depth, direction, body_name):
+    """Plain rectangular block for a bought-part mock-up."""
+    sk = b.sketch(plane_axis, plane_expression, body_name)
+    b.rect(sk, b.project(sk, b.anchor(**centre)), half)
+    ext = b.extrude(b.profiles(sk), depth, direction, NEW, name=body_name)
+    ext.bodies.item(0).name = body_name
+    return ext.bodies.item(0)
+
+
+def display_and_pi(ctx):
+    # Standoffs on the display back, on the Pi hole pattern.
+    d = ctx.b("Display_Placeholder")
+    holes = [(side_expr(sx, "pi_hole_spacing_x/2"), "face_center_z %s pi_hole_spacing_y/2" % ("+" if sz > 0 else "-"))
+             for sx, sz in quadrants()]
+    sk = d.sketch("y", "display_back_y", "Display Pi standoffs")
+    centres = [d.anchor(x="pi_holes_center_x + (%s)" % hx, y="display_back_y", z=hz) for hx, hz in holes]
+    ext = d.extrude(d.circles(sk, centres, "display_standoff_diameter"), "pi_pcb_y - display_back_y", Y_POS, NEW,
+                    name="Display Pi standoffs")
+    for i in range(ext.bodies.count):
+        ext.bodies.item(i).name = "Display_Pi_Standoff_%d" % (i + 1)
+
+    # Raspberry Pi 5: board with its mounting holes, ports, header and Active Cooler.
+    p = ctx.b("Raspberry_Pi_5")
+    mock_block(p, "y", "pi_pcb_y", dict(x="pi_center_x", y="pi_pcb_y", z=pi_z("pi_board_width/2")),
+               {"x": "pi_board_length/2", "z": "pi_board_width/2"}, "pi_board_thickness", Y_POS, "Pi_Board")
+    sk = p.sketch("y", "pi_pcb_y", "Pi mounting holes")
+    centres = [p.anchor(x="pi_holes_center_x + (%s)" % hx, y="pi_pcb_y", z=hz) for hx, hz in holes]
+    p.extrude(p.circles(sk, centres, "2.7 mm"), "pi_board_thickness + 1 mm", Y_POS, CUT, [p.body("Pi_Board")],
+              name="Pi mounting holes")
+    top = "pi_pcb_y + pi_board_thickness"
+    for name, u0, u1, v0, v1, height in AP.PI5_FEATURES:
+        mock_block(p, "y", top, dict(x=pi_x("%g mm" % ((u0 + u1) / 2)), y=top, z=pi_z("%g mm" % ((v0 + v1) / 2))),
+                   {"x": "%g mm" % ((u1 - u0) / 2), "z": "%g mm" % ((v1 - v0) / 2)}, "%g mm" % height, Y_POS, name)
+    cu, cv = AP.PI5_COOLER
+    mock_block(p, "y", top, dict(x=pi_x("%g mm + cooler_length/2" % cu), y=top, z=pi_z("%g mm + cooler_width/2" % cv)),
+               {"x": "cooler_length/2", "z": "cooler_width/2"}, "cooler_height", Y_POS, "Active_Cooler")
+
+
+def speakers_and_clamps(ctx):
+    b = ctx.b("Main_Body")
+    for side, sign in (("Left", -1), ("Right", 1)):
+        inward, outward = (-sign, 0, 0), (sign, 0, 0)
+        wall_mid = side_expr(sign, "body_width/2 - wall_thickness/2")
+        boss_end = side_expr(sign, "speaker_boss_x")
+        spots = [zq(sz, "speaker_clamp_dz") for sz in (-1, 1)]
+
+        # Insert bosses on the inside of the side wall, above and below the speaker.
+        sk = b.sketch("x", wall_mid, "%s speaker clamp bosses" % side)
+        b.extrude(b.circles(sk, [b.anchor(x=wall_mid, y="module_center_y", z=z) for z in spots], "insert_boss_diameter"),
+                  "wall_thickness/2 + speaker_boss_length", inward, JOIN, [b.body("Main_Body")],
+                  name="%s speaker clamp bosses" % side)
+        sk = b.sketch("x", boss_end, "%s speaker clamp insert holes" % side)
+        b.extrude(b.circles(sk, [b.anchor(x=boss_end, y="module_center_y", z=z) for z in spots], "insert_hole_diameter"),
+                  "insert_depth", outward, CUT, [b.body("Main_Body")], name="%s speaker clamp insert holes" % side)
+
+        # Speaker mock-up: rim seated on the accent ring, basket, magnet.
+        s = ctx.b(side + "_Speaker")
+        front = "speaker_front_x"
+        pts = [
+            (front, "0 mm"),
+            (front, "speaker_outer_diameter/2"),
+            ("%s - speaker_rim_thickness" % front, "speaker_outer_diameter/2"),
+            ("%s - speaker_rim_thickness" % front, "speaker_outer_diameter/2 - 2 mm"),
+            ("%s - speaker_depth + 10 mm" % front, "speaker_magnet_diameter/2"),
+            ("%s - speaker_depth" % front, "speaker_magnet_diameter/2"),
+            ("%s - speaker_depth" % front, "0 mm"),
+        ]
+        sk = s.sketch("z", "body_center_z", side + " speaker profile")
+        lines = s.polygon(sk, [s.anchor(x=side_expr(sign, x), y="module_center_y + %s" % r, z="body_center_z")
+                               for x, r in pts])
+        body = s.revolve(s.profiles(sk), lines[-1], side + "_Speaker")
+        body.name = side + "_Speaker"
+
+        # Clamp: plate on the boss ends, collar pressing the speaker rim.
+        c = ctx.b(side + "_Speaker_Clamp")
+        name = side + "_Speaker_Clamp"
+        centre = c.anchor(x=boss_end, y="module_center_y", z="body_center_z")
+        sk = c.sketch("x", boss_end, name + " plate")
+        cc = c.project(sk, centre)
+        c.rect(sk, cc, {"y": "speaker_clamp_width/2", "z": "speaker_clamp_dz + speaker_clamp_width/2"})
+        c.circle(sk, cc, "speaker_outer_diameter + 8 mm")
+        ext = c.extrude(c.profiles(sk), "speaker_clamp_thickness", inward, NEW, name=name + " plate")
+        ext.bodies.item(0).name = name
+        sk = c.sketch("x", boss_end, name + " collar")
+        cc = c.project(sk, centre)
+        c.circle(sk, cc, "speaker_outer_diameter - 3 mm")
+        c.circle(sk, cc, "speaker_outer_diameter + 4 mm")
+        c.extrude(c.profiles(sk, loops=2), "speaker_boss_length - speaker_rim_thickness", outward, JOIN,
+                  [c.body(name)], name=name + " collar")
+        sk = c.sketch("x", boss_end, name + " bore")
+        prof = c.profile_for_curve(sk, c.circle(sk, c.project(sk, centre), "speaker_outer_diameter - 3 mm"))
+        c.extrude_symmetric([prof], "30 mm", CUT, [c.body(name)], name=name + " bore")
+        sk = c.sketch("x", boss_end, name + " screw holes")
+        c.extrude_symmetric(c.circles(sk, [c.anchor(x=boss_end, y="module_center_y", z=z) for z in spots],
+                                      "screw_clearance_diameter"), "30 mm", CUT, [c.body(name)], name=name + " screw holes")
+
+
+def amplifier_and_cradle(ctx):
+    t = ctx.b("Electronics_Tray")
+    top = "tray_z + tray_thickness"
+    height = "amp_ledge_height + amp_board_thickness"
+    centre = dict(y="amp_center_y", z=top)
+
+    # Cradle walls round the board, ledges under its side edges, clamp bosses.
+    sk = t.sketch("z", top, "Amp cradle walls")
+    c = t.project(sk, t.anchor(**centre))
+    t.rect(sk, c, {"x": "amp_board_width/2 + assembly_clearance + amp_cradle_wall",
+                   "y": "amp_board_depth/2 + assembly_clearance + amp_cradle_wall"})
+    t.rect(sk, c, {"x": "amp_board_width/2 + assembly_clearance", "y": "amp_board_depth/2 + assembly_clearance"})
+    t.extrude(t.profiles(sk, loops=2), height, Z_POS, JOIN, [t.body("Electronics_Tray")], name="Amp cradle walls")
+    sk = t.sketch("z", top, "Amp cradle ledges")
+    for sx in (-1, 1):
+        x = side_expr(sx, "amp_board_width/2 + assembly_clearance/2 - amp_ledge_width/2")
+        t.rect(sk, t.project(sk, t.anchor(x=x, **centre)),
+               {"x": "(amp_ledge_width + assembly_clearance)/2", "y": "amp_board_depth/2 + assembly_clearance"})
+    t.extrude(t.profiles(sk), "amp_ledge_height", Z_POS, JOIN, [t.body("Electronics_Tray")], name="Amp cradle ledges")
+    spots = [side_expr(sx, "amp_screw_x") for sx in (-1, 1)]
+    sk = t.sketch("z", top, "Amp clamp bosses")
+    t.extrude(t.circles(sk, [t.anchor(x=x, **centre) for x in spots], "insert_boss_diameter"), height, Z_POS, JOIN,
+              [t.body("Electronics_Tray")], name="Amp clamp bosses")
+    sk = t.sketch("z", "amp_top_z", "Amp clamp insert holes")
+    t.extrude(t.circles(sk, [t.anchor(x=x, y="amp_center_y", z="amp_top_z") for x in spots], "insert_hole_diameter"),
+              "insert_depth", Z_NEG, CUT, [t.body("Electronics_Tray")], name="Amp clamp insert holes")
+
+    # Amplifier mock-up: board, header pins along the front, terminal block at the back.
+    a = ctx.b("I2S_Amplifier")
+    board_bottom = "amp_top_z - amp_board_thickness"
+    mock_block(a, "z", board_bottom, dict(y="amp_center_y", z=board_bottom),
+               {"x": "amp_board_width/2", "y": "amp_board_depth/2"}, "amp_board_thickness", Z_POS, "Amp_Board")
+    mock_block(a, "z", "amp_top_z", dict(y="amp_center_y - amp_board_depth/2 + 2 mm", z="amp_top_z"),
+               {"x": "8.9 mm", "y": "1.27 mm"}, "amp_part_height", Z_POS, "Amp_Header")
+    mock_block(a, "z", "amp_top_z", dict(y="amp_center_y + amp_board_depth/2 - 2.5 mm", z="amp_top_z"),
+               {"x": "3.8 mm", "y": "2.5 mm"}, "amp_part_height", Z_POS, "Amp_Terminal_Block")
+
+    # Clamp: two tabs pressing the board side edges, one screw each.
+    k = ctx.b("Amp_Clamp")
+    inner = "amp_board_width/2 - amp_clamp_overlap"
+    outer = "amp_screw_x + insert_boss_diameter/2 + 2 mm"
+    sk = k.sketch("z", "amp_top_z", "Amp clamp tabs")
+    for sx in (-1, 1):
+        k.rect(sk, k.project(sk, k.anchor(x=side_expr(sx, "((%s) + (%s))/2" % (inner, outer)), y="amp_center_y", z="amp_top_z")),
+               {"x": "((%s) - (%s))/2" % (outer, inner), "y": "5 mm"})
+    ext = k.extrude(k.profiles(sk), "amp_clamp_thickness", Z_POS, NEW, name="Amp clamp tabs")
+    tabs = [ext.bodies.item(i) for i in range(ext.bodies.count)]
+    for body in tabs:
+        bb = body.boundingBox
+        body.name = "Amp_Clamp_%s" % ("Right" if bb.minPoint.x + bb.maxPoint.x > 0 else "Left")
+    sk = k.sketch("z", "amp_top_z", "Amp clamp screw holes")
+    k.extrude_symmetric(k.circles(sk, [k.anchor(x=x, y="amp_center_y", z="amp_top_z") for x in spots],
+                                  "screw_clearance_diameter"), "20 mm", CUT, tabs, name="Amp clamp screw holes")
+
+
+def top_switch(ctx):
+    # Button_Retainer: locating pocket for the switch body and holes for its legs.
+    r = ctx.b("Button_Retainer")
+    centre = r.anchor(y="module_center_y", z="button_retainer_z")
+    sk = r.sketch("z", "button_retainer_z", "Switch pocket")
+    r.rect(sk, r.project(sk, centre), {"x": "button_switch_size/2 + 1 mm", "y": "button_switch_size/2 + 1 mm"})
+    r.extrude(r.profiles(sk), "button_switch_pocket_depth", Z_NEG, CUT, [r.body("Button_Retainer")], name="Switch pocket")
+    legs = [(side_expr(sx, "button_switch_leg_pitch_x/2"),
+             "module_center_y %s button_switch_leg_pitch_y/2" % ("+" if sy > 0 else "-")) for sx in (-1, 1) for sy in (-1, 1)]
+    sk = r.sketch("z", "button_retainer_z", "Switch leg holes")
+    r.extrude(r.circles(sk, [r.anchor(x=x, y=y, z="button_retainer_z") for x, y in legs], "button_switch_leg_hole"),
+              "button_retainer_thickness + 1 mm", Z_NEG, CUT, [r.body("Button_Retainer")], name="Switch leg holes")
+
+    # 12 x 12 mm, 6 mm tall tactile switch mock-up.
+    s = ctx.b("Tactile_Switch")
+    base = "button_retainer_z - button_switch_pocket_depth"
+    mock_block(s, "z", base, dict(y="module_center_y", z=base),
+               {"x": "button_switch_size/2", "y": "button_switch_size/2"}, "3.5 mm", Z_POS, "Switch_Body")
+    sk = s.sketch("z", base + " + 3.5 mm", "Switch plunger")
+    s.circle(sk, s.project(sk, s.anchor(y="module_center_y", z=base + " + 3.5 mm")), "7 mm")
+    ext = s.extrude(s.profiles(sk), "button_switch_total_height - 3.5 mm", Z_POS, NEW, name="Switch plunger")
+    ext.bodies.item(0).name = "Switch_Plunger"
+    sk = s.sketch("z", base, "Switch legs")
+    for x, y in legs:
+        s.rect(sk, s.project(sk, s.anchor(x=x, y=y, z=base)), {"x": "0.4 mm", "y": "0.4 mm"})
+    ext = s.extrude(s.profiles(sk), "3.5 mm", Z_NEG, NEW, name="Switch legs")
+    for i in range(ext.bodies.count):
+        ext.bodies.item(i).name = "Switch_Leg_%d" % (i + 1)
+
+
+def psu_and_microphone(ctx):
+    # Official 27 W PSU: USB-C plug in the Pi, lead routed down to the floor exit.
+    p = ctx.b("PSU_Plug")
+    plug_z0 = "pi_top_z + 1 mm"
+    mock_block(p, "z", plug_z0, dict(x="usbc_x", y="psu_plug_y", z=plug_z0),
+               {"x": "usbc_plug_width/2", "y": "usbc_plug_thickness/2"}, "usbc_plug_length", Z_POS, "PSU_USB_C_Plug")
+    psu_cable(p)
+
+    # Mini USB microphone in the lower USB port nearest the floor.
+    m = ctx.b("USB_Microphone")
+    port_face = "pi_center_x - pi_board_length/2 - 2 mm"
+    mock_block(m, "x", port_face,
+               dict(x=port_face, y="pi_pcb_y + pi_board_thickness + %g mm" % AP.PI5_MIC_PORT_LIFT,
+                    z=pi_z("%g mm" % AP.PI5_MIC_PORT_V)),
+               {"y": "mic_thickness/2", "z": "mic_width/2"}, "mic_length", X_NEG, "USB_Microphone")
+
+
+# PSU cable route in the plane X = usbc_x: up out of the plug, back along the
+# top, down behind the Pi, along the tray under the clamp, down through the
+# tray and floor slot, and back out under the rear cover. (Y, Z) expressions.
+PSU_ROUTE = [
+    ("psu_plug_y", "psu_plug_top_z"),
+    ("psu_plug_y", "psu_route_top_z"),
+    ("psu_route_y", "psu_route_top_z"),
+    ("psu_route_y", "psu_run_z"),
+    ("psu_exit_y", "psu_run_z"),
+    ("psu_exit_y", "psu_under_z"),
+    ("body_depth/2 + 15 mm", "psu_under_z"),
+]
+
+
+def psu_cable(p):
+    sk = p.sketch("x", "usbc_x", "PSU cable route")
+    pts = [p.project(sk, p.anchor(x="usbc_x", y=y, z=z)) for y, z in PSU_ROUTE]
+    lines = sk.sketchCurves.sketchLines
+    segments = [lines.addByTwoPoints(pts[i], pts[i + 1]) for i in range(len(pts) - 1)]
+    radius = p.cm("cable_bend_radius")
+    for a, b in zip(segments, segments[1:]):
+        sk.sketchCurves.sketchArcs.addFillet(a, a.endSketchPoint.geometry, b, b.startSketchPoint.geometry, radius)
+    cable = p.pipe(segments[0], "psu_cable_diameter", "PSU cable", chain=True)
+    if cable:
+        cable.name = "PSU_Cable"
+
+
+def cable_retention(ctx):
+    """Snap clip under the top wall, screwed clamp on the tray, and the floor exit slot."""
+    # Snap clip on the top run, part of Main_Body (a C ring on a stem).
+    b = ctx.b("Main_Body")
+    y0 = "cable_clip_y - cable_clip_length/2"
+    ring = b.anchor(x="usbc_x", y=y0, z="psu_route_top_z")
+    stem_top = "body_top_z - wall_thickness/2"
+    sk = b.sketch("y", y0, "Cable clip ring")
+    b.circle(sk, b.project(sk, ring), "psu_cable_diameter + 2*cable_clip_wall")
+    b.rect(sk, b.project(sk, b.anchor(x="usbc_x", y=y0, z="(psu_route_top_z + %s)/2" % stem_top)),
+           {"x": "cable_clip_wall + 0.4 mm", "z": "(%s - psu_route_top_z)/2" % stem_top})
+    ext = b.extrude(b.profiles(sk), "cable_clip_length", Y_POS, NEW, name="Cable clip ring")
+    b.combine(b.body("Main_Body"), [ext.bodies.item(i) for i in range(ext.bodies.count)], JOIN, "Cable clip")
+    sk = b.sketch("y", y0, "Cable clip bore")
+    b.circle(sk, b.project(sk, ring), "psu_cable_diameter")
+    gap = "(psu_cable_diameter/2 + cable_clip_wall + 1 mm)"
+    b.rect(sk, b.project(sk, b.anchor(x="usbc_x", y=y0, z="psu_route_top_z - %s/2" % gap)),
+           {"x": "cable_clip_opening/2", "z": "%s/2" % gap})
+    b.extrude(b.profiles(sk), "cable_clip_length", Y_POS, CUT, [b.body("Main_Body")], name="Cable clip bore")
+
+    # Floor notch, open to the split edge, so the cable drops out under the body.
+    notch_y0 = "psu_exit_y - cable_slot_width/2"
+    sk = b.sketch("z", "foot_height - 1 mm", "Cable floor notch")
+    b.rect(sk, b.project(sk, b.anchor(x="usbc_x", y="(%s + split_y + 1 mm)/2" % notch_y0, z="foot_height - 1 mm")),
+           {"x": "cable_slot_width/2", "y": "(split_y + 1 mm - (%s))/2" % notch_y0})
+    b.extrude(b.profiles(sk), "wall_thickness + 2 mm", Z_POS, CUT, [b.body("Main_Body")], name="Cable floor notch")
+
+    # Tray: slot from the end of the clamp run out to the rear edge, clamp bosses.
+    t = ctx.b("Electronics_Tray")
+    slot_y0 = "psu_exit_y - cable_bend_radius"
+    sk = t.sketch("z", "tray_z - 1 mm", "Cable tray slot")
+    t.rect(sk, t.project(sk, t.anchor(x="usbc_x", y="(%s + tray_depth/2 + 1 mm)/2" % slot_y0, z="tray_z - 1 mm")),
+           {"x": "cable_slot_width/2", "y": "(tray_depth/2 + 1 mm - (%s))/2" % slot_y0})
+    t.extrude(t.profiles(sk), "tray_thickness + 2 mm", Z_POS, CUT, [t.body("Electronics_Tray")], name="Cable tray slot")
+    spots = ["usbc_x - cable_clamp_screw_dx", "usbc_x + cable_clamp_screw_dx"]
+    top = "tray_z + tray_thickness"
+    boss_top = "cable_clamp_z - cable_clamp_crush"
+    sk = t.sketch("z", top, "Cable clamp bosses")
+    t.extrude(t.circles(sk, [t.anchor(x=x, y="cable_clamp_y", z=top) for x in spots], "insert_boss_diameter"),
+              "%s - (%s)" % (boss_top, top), Z_POS, JOIN, [t.body("Electronics_Tray")], name="Cable clamp bosses")
+    sk = t.sketch("z", boss_top, "Cable clamp insert holes")
+    t.extrude(t.circles(sk, [t.anchor(x=x, y="cable_clamp_y", z=boss_top) for x in spots], "insert_hole_diameter"),
+              "insert_depth", Z_NEG, CUT, [t.body("Electronics_Tray")], name="Cable clamp insert holes")
+
+    # Clamp bar: rests on the cable, 0.3 mm above its bosses, two screws pull it down.
+    k = ctx.b("Cable_Clamp")
+    sk = k.sketch("z", "cable_clamp_z", "Cable clamp bar")
+    k.rect(sk, k.project(sk, k.anchor(x="usbc_x", y="cable_clamp_y", z="cable_clamp_z")),
+           {"x": "cable_clamp_length/2", "y": "cable_clamp_width/2"})
+    ext = k.extrude(k.profiles(sk), "cable_clamp_thickness", Z_POS, NEW, name="Cable clamp bar")
+    ext.bodies.item(0).name = "Cable_Clamp"
+    sk = k.sketch("z", "cable_clamp_z", "Cable clamp screw holes")
+    k.extrude_symmetric(k.circles(sk, [k.anchor(x=x, y="cable_clamp_y", z="cable_clamp_z") for x in spots],
+                                  "screw_clearance_diameter"), "20 mm", CUT, [k.body("Cable_Clamp")], name="Cable clamp screw holes")
+
+
+# ---------------------------------------------------------------------------
 # Stage G - appearances, joints, view
 # ---------------------------------------------------------------------------
 
@@ -1013,6 +1404,8 @@ APPEARANCES = {
     "AlfieBot Dark Grey": (["Plastic - Matte (Gray)", "Plastic - Matte (Black)"], (62, 64, 68)),
     "AlfieBot Cyan Blue": (["Plastic - Glossy (Blue)", "Plastic - Matte (Blue)"], (0, 182, 235)),
     "AlfieBot Highlight White": (["Plastic - Glossy (White)", "Plastic - Matte (White)"], (255, 255, 255)),
+    "AlfieBot PCB Green": (["Plastic - Matte (Green)", "Plastic - Glossy (Green)"], (20, 110, 60)),
+    "AlfieBot Metal": (["Aluminum - Satin", "Plastic - Matte (Gray)"], (190, 192, 196)),
 }
 
 # (component, body name or None for all bodies) -> appearance
@@ -1034,6 +1427,21 @@ APPEARANCE_MAP = [
     ("Eye_Graphics", "Eye_Ring_2", "AlfieBot Cyan Blue"),
     ("Eye_Graphics", "Eye_Highlight_1", "AlfieBot Highlight White"),
     ("Eye_Graphics", "Eye_Highlight_2", "AlfieBot Highlight White"),
+    ("Raspberry_Pi_5", None, "AlfieBot Metal"),
+    ("Raspberry_Pi_5", "Pi_Board", "AlfieBot PCB Green"),
+    ("Raspberry_Pi_5", "Pi_GPIO_Header", "AlfieBot Black"),
+    ("USB_Microphone", None, "AlfieBot Black"),
+    ("PSU_Plug", None, "AlfieBot Highlight White"),
+    ("Left_Speaker", None, "AlfieBot Black"),
+    ("Right_Speaker", None, "AlfieBot Black"),
+    ("Left_Speaker_Clamp", None, "AlfieBot Dark Grey"),
+    ("Right_Speaker_Clamp", None, "AlfieBot Dark Grey"),
+    ("I2S_Amplifier", None, "AlfieBot Black"),
+    ("I2S_Amplifier", "Amp_Board", "AlfieBot Cyan Blue"),
+    ("Amp_Clamp", None, "AlfieBot Dark Grey"),
+    ("Cable_Clamp", None, "AlfieBot Dark Grey"),
+    ("Tactile_Switch", None, "AlfieBot Black"),
+    ("Tactile_Switch", "Switch_Body", "AlfieBot Metal"),
 ]
 
 
@@ -1124,7 +1532,11 @@ def create_joints(ctx, only=None):
     deleted to move a part (e.g. the rear cover) independently.
     """
     main = ctx.b("Main_Body").occ
-    main.isGrounded = True
+    try:
+        main.isGrounded = True
+    except Exception:  # noqa: BLE001
+        # A sub-component occurrence cannot be grounded; ground the assembly.
+        ctx.asm_occ.isGrounded = True
     joints = ctx.asm.asBuiltJoints
     for name, b in ctx.builders.items():
         if name == "Main_Body" or (only is not None and name not in only):
@@ -1431,7 +1843,8 @@ def context_for_active_design():
     for i in range(children.count):
         occ = children.item(i)
         ctx.builders[occ.component.name] = PartBuilder(design, occ)
-    missing = [n for n in AP.COMPONENTS if n not in ctx.builders and n != "Button_Retainer"]
+    missing = [n for n in AP.COMPONENTS
+               if n not in ctx.builders and n != "Button_Retainer" and n not in AP.ELECTRONICS_COMPONENTS]
     if missing:
         raise StageError("The active design is missing: %s" % ", ".join(missing))
     combines = ctx.b("Main_Body").feats.combineFeatures
@@ -1440,6 +1853,96 @@ def context_for_active_design():
     add_missing_user_parameters(design)
     if "Button_Retainer" not in ctx.builders:
         ctx.add_component("Button_Retainer")
+    return ctx
+
+
+# Parameters whose expressions changed with Stage H, set when upgrading a design.
+UPGRADED_PARAMETERS = [
+    "face_height", "speaker_diameter", "bezel_thickness", "display_width", "display_height", "display_thickness",
+    "button_travel", "bezel_screw_x", "bezel_screw_dz", "button_switch_height",
+    "standoff_diameter", "standoff_hole_diameter", "standoff_height",
+]
+OBSOLETE_PARAMETERS = ["display_overlap", "bezel_screw_edge"]
+# Sketch dimension expressions re-pointed when upgrading: component -> {old (no spaces): new}
+REPOINTED_DIMENSIONS = {
+    "Front_Bezel": {"display_width/2-display_overlap": "display_window_width/2",
+                    "display_height/2-display_overlap": "display_window_height/2"},
+    "Button_Retainer": {"insert_boss_diameter/2+2mm": "button_switch_size/2 + 2.5 mm"},
+}
+# Features no longer wanted, suppressed when upgrading: (component, feature name)
+RETIRED_FEATURES = [
+    ("Electronics_Tray", "Standoff pattern"), ("Electronics_Tray", "Standoff"),
+    ("Main_Body", "Bezel screw access"), ("Main_Body", "Bezel screw clearance"),
+]
+
+
+def _find_feature(comp, name):
+    for collection_name in ("rectangularPatternFeatures", "extrudeFeatures", "holeFeatures", "combineFeatures"):
+        features = getattr(comp.features, collection_name)
+        found = features.itemByName(name)
+        if found:
+            return found
+    return None
+
+
+def context_for_electronics_upgrade():
+    """BuildContext over a design that has the fastenings but not Stage H, ready for Stage H."""
+    design = adsk.fusion.Design.cast(_app.activeProduct)
+    if not design:
+        raise StageError("No active Fusion design. Open the AlfieBot design and run again.")
+    assembly_occ = None
+    occs = design.rootComponent.occurrences
+    for i in range(occs.count):
+        if occs.item(i).component.name == AP.ASSEMBLY_NAME:
+            assembly_occ = occs.item(i)
+    if assembly_occ is None:
+        raise StageError("No '%s' component in the active design." % AP.ASSEMBLY_NAME)
+    ctx = BuildContext(design, assembly_occ)
+    children = ctx.asm.occurrences
+    for i in range(children.count):
+        occ = children.item(i)
+        ctx.builders[occ.component.name] = PartBuilder(design, occ)
+    combines = ctx.b("Main_Body").feats.combineFeatures
+    names = [combines.item(i).name for i in range(combines.count)]
+    if not any(n.startswith(FASTENING_MARKER) for n in names):
+        raise StageError("Add the fastenings (Stage F) first.")
+    if any(n.startswith(ELECTRONICS_MARKER) for n in names):
+        raise StageError("The active design already has the electronics.")
+
+    user_params = design.userParameters
+    add_missing_user_parameters(design)
+    # Re-point sketches before the display grows, so the bezel window never
+    # outgrows the bezel.
+    for comp_name, mapping in REPOINTED_DIMENSIONS.items():
+        changed = 0
+        for sk in ctx.b(comp_name).comp.sketches:
+            for dim in sk.sketchDimensions:
+                key = dim.parameter.expression.replace(" ", "")
+                if key in mapping:
+                    dim.parameter.expression = mapping[key]
+                    changed += 1
+        log("%s: re-pointed %d sketch dimensions" % (comp_name, changed))
+    table = {p[0]: p for p in AP.ALL_PARAMETERS}
+    params = [user_params.itemByName(n) for n in UPGRADED_PARAMETERS]
+    try:
+        design.modifyParameters(params, [vi(table[n][1]) for n in UPGRADED_PARAMETERS])
+    except Exception:  # noqa: BLE001
+        for param, n in zip(params, UPGRADED_PARAMETERS):
+            param.expression = table[n][1]
+    for param, n in zip(params, UPGRADED_PARAMETERS):
+        param.comment = table[n][3]
+    for n in OBSOLETE_PARAMETERS:
+        param = user_params.itemByName(n)
+        if param and param.isDeletable:
+            param.deleteMe()
+    for comp_name, feature_name in RETIRED_FEATURES:
+        feature = _find_feature(ctx.b(comp_name).comp, feature_name)
+        if feature:
+            feature.timelineObject.isSuppressed = True
+            log("Suppressed %s / %s" % (comp_name, feature_name))
+    for name in AP.ELECTRONICS_COMPONENTS:
+        if name not in ctx.builders:
+            ctx.add_component(name)
     return ctx
 
 
@@ -1465,6 +1968,7 @@ STAGES = [
     ("D", "Top button and feet", stage_d_button_feet),
     ("E", "Rear cover and electronics tray", stage_e_rear_tray),
     ("F", "Fastenings (screw bosses, inserts, retainer)", stage_f_fastenings),
+    ("H", "Electronics mock-ups and mounts", stage_h_electronics),
 ]
 
 
@@ -1477,7 +1981,11 @@ def run(context):
         _ui = _app.userInterface
         log("AlfieBot V%s generator starting" % AP.VERSION)
 
-        if ADD_FASTENINGS_TO_ACTIVE_DESIGN:
+        if ADD_ELECTRONICS_TO_ACTIVE_DESIGN:
+            ctx = context_for_electronics_upgrade()
+            stages = [s for s in STAGES if s[0] == "H"]
+            new_parts = list(AP.ELECTRONICS_COMPONENTS)
+        elif ADD_FASTENINGS_TO_ACTIVE_DESIGN:
             ctx = context_for_active_design()
             stages = [s for s in STAGES if s[0] == "F"]
             new_parts = ["Button_Retainer"]
@@ -1538,9 +2046,11 @@ def run(context):
         if failures:
             summary += "\nFailures:\n" + "\n".join("- %s: %s" % (r[1], r[2][:160]) for r in failures[:8])
         summary += "\n\nFull report: %s" % (path or "(could not write report file)")
-        _ui.messageBox(summary, "AlfieBot Generator")
+        log(summary)
+        if SHOW_MESSAGE_BOX:
+            _ui.messageBox(summary, "AlfieBot Generator")
     except Exception:  # noqa: BLE001
         message = "AlfieBot generator failed:\n%s" % traceback.format_exc()
         log(message, "ERROR")
-        if _ui:
+        if _ui and SHOW_MESSAGE_BOX:
             _ui.messageBox(message, "AlfieBot Generator")
