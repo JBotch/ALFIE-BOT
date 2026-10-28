@@ -22,6 +22,7 @@ ALPHABET = "abcdefghijklmnopqrstuvwxyz"
 LETTER_SETS = {
     "all": ALPHABET,
     "confusing": "".join(CONFUSION_SETS),
+    "pairs": "bdmnptfs",  # B/D, M/N, P/T, F/S: the brief's commonly confused pairs
     **{"/".join(group.upper()): group for group in CONFUSION_SETS},
 }
 SPEEDS = ("normal", "slow", "fast")

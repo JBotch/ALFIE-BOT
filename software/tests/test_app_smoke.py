@@ -52,3 +52,43 @@ def test_letter_test_panel_and_spoken_letters_draw():
     app.run(max_frames=3)
     assert robot.personality == "bubbly" and robot.voice_profile == "auto"
     pygame.quit()
+
+
+def test_learning_tabs_draw_and_parent_controls_work():
+    import tempfile
+
+    import pygame
+
+    from alfiebot.config import load_config
+    from alfiebot.core.robot import AlfieBot
+    from alfiebot.hardware.simulator import create_simulator_platform
+    from alfiebot.ui import widgets
+    from alfiebot.ui.log_capture import MemoryLogHandler
+    from alfiebot.ui.simulator_app import SimulatorApp
+
+    pygame.init()
+    widgets._fonts.clear()
+    config = load_config()
+    config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
+    config["config_path"] = config["data_dir"] + "/alfiebot.json"
+    robot = AlfieBot(config, create_simulator_platform(config, speech=False))
+    app = SimulatorApp(robot, config, MemoryLogHandler())
+    robot.spelling_lists.add_words(robot.tutor.active_week, ["cat", "dog"])
+    robot.start_spelling("test")
+    robot.tutor.handle(robot.tutor.current_word)
+    for tab in ("progress", "changes"):
+        app.spelling.toggle(tab)
+        app.run(max_frames=2)  # draws with the test running: words hidden
+    robot.tutor.stop()
+    panel = app.spelling
+    change = robot.progress.adaptations()[0]
+    panel._undo(change["id"])
+    assert robot.progress.adaptations()[0]["reverted_at"]
+    panel._export()
+    assert panel.message.startswith("Saved") and panel.message.endswith(".csv")
+    panel._reset_all()
+    assert robot.progress.known_words()  # first click only arms it
+    panel._reset_all()
+    assert robot.progress.known_words() == [] and robot.spelling_lists.load(robot.tutor.active_week).words
+    app.run(max_frames=2)
+    pygame.quit()

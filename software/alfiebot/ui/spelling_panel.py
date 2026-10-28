@@ -1,8 +1,13 @@
-"""Spelling homework manager: weekly lists and progress.
+"""Spelling homework manager: weekly lists, progress and the learning log.
 
 Shown over the left half of the simulator. Typed words are checked
 before saving: they appear as chips, a click on one moves it back into the
 box to fix it, and only "Save" writes them to the list.
+
+Progress shows each word's review box, next review, right / wrong / help /
+unclear counts and repeated difficulties, with a reset per word. Changes
+shows every automatic adaptation with its reason and an Undo, plus CSV
+export and "Reset all learning". Words are hidden while a test runs.
 """
 
 import json
@@ -34,6 +39,7 @@ class SpellingPanel:
         self.rejected = []
         self.message = ""
         self._delete_armed_until = 0.0
+        self._armed = None  # (action name, until) for two-click parent controls
         self._hits = []  # (rect, action) rebuilt every frame
         self.input = w.TextInput((self.rect.x + 16, 0, self.rect.width - 32 - 96, 32), self._check,
                                  "Type words: because, friend, people ...")
@@ -106,7 +112,7 @@ class SpellingPanel:
         except (OSError, ValueError) as exc:
             self.message = f"Couldn't read the example list: {exc}"
             return
-        added = self.lists.add_words(self.tutor.active_week, data.get("words", []))
+        added = self.lists.add_words(self.tutor.active_week, data.get("words", []), data.get("extras") or {})
         self.message = f"Added {len(added)} example words to {self.tutor.active_week}."
 
     def _delete_list(self):
@@ -118,6 +124,41 @@ class SpellingPanel:
         self._delete_armed_until = 0.0
         self.lists.delete(self.tutor.active_week)
         self.message = f"Deleted the list for {self.tutor.active_week}."
+
+    def _confirm(self, name: str, prompt: str) -> bool:
+        """Parent controls that delete things take two clicks."""
+        now = time.monotonic()
+        if self._armed and self._armed[0] == name and now < self._armed[1]:
+            self._armed = None
+            return True
+        self._armed = (name, now + 4.0)
+        self.message = prompt
+        return False
+
+    def _armed_for(self, name: str) -> bool:
+        return bool(self._armed and self._armed[0] == name and time.monotonic() < self._armed[1])
+
+    def _reset_word(self, word):
+        if self._confirm(f"reset:{word}", f"Click Reset again to forget the progress for {word}."):
+            self.robot.progress.reset_word(word)
+            self.message = f"Progress for {word} reset."
+
+    def _reset_all(self):
+        if self._confirm("reset_all", "Click again to delete all spelling progress (the lists are kept)."):
+            self.tutor.stop()
+            self.robot.progress.reset_all()
+            self.message = "All spelling progress deleted. The lists are kept."
+
+    def _undo(self, adaptation_id):
+        ok = self.robot.progress.undo(adaptation_id)
+        self.message = "Change undone." if ok else "That change was already undone."
+
+    def _export(self):
+        try:
+            path = self.robot.progress.export_csv(Path(self.robot.store.base_dir) / "exports")
+            self.message = f"Saved {path}"
+        except OSError as exc:
+            self.message = f"Couldn't export: {exc}"
 
     # ---- events ----------------------------------------------------------
     def handle(self, event) -> bool:
@@ -178,12 +219,17 @@ class SpellingPanel:
         self._button(s, (x + 230, r.y + 12, 80, 28), "Lists", lambda: setattr(self, "tab", "lists"),
                      mouse, selected=self.tab == "lists")
         self._button(s, (x + 316, r.y + 12, 90, 28), "Progress",
-                     lambda: (setattr(self, "tab", "progress"), self.robot.progress.reload()),
+                     lambda: (setattr(self, "tab", "progress"), setattr(self, "message", "")),
                      mouse, selected=self.tab == "progress")
+        self._button(s, (x + 412, r.y + 12, 90, 28), "Changes",
+                     lambda: (setattr(self, "tab", "changes"), setattr(self, "message", "")),
+                     mouse, selected=self.tab == "changes")
         if self.tab == "lists":
             self._draw_lists(s, mouse, dt, x, right, r.y + 54)
+        elif self.tab == "progress":
+            self._draw_progress(s, mouse, x, right, r.y + 54)
         else:
-            self._draw_progress(s, x, right, r.y + 54)
+            self._draw_changes(s, mouse, x, right, r.y + 54)
 
     def _draw_lists(self, s, mouse, dt, x, right, y):
         week = self.tutor.active_week
@@ -241,47 +287,89 @@ class SpellingPanel:
                          "Click again to confirm" if armed else "Delete this list",
                          self._delete_list, mouse, colour=(120, 50, 50) if armed else None)
 
-    def _draw_progress(self, s, x, right, y):
+    def _draw_progress(self, s, mouse, x, right, y):
         progress = self.robot.progress
         words = self.lists.load(self.tutor.active_week).words
-        others = sorted(set(progress.data["words"]) - set(words))
+        others = [wd for wd in progress.known_words() if wd not in words]
         rows = words + others
         w.draw_text(s, f"Words for {self.tutor.active_week}" + (" and earlier" if others else ""),
                     (x, y), w.ACCENT, 19)
+        w.draw_text(s, "Box 1 comes back tomorrow, box 5 in 14 days.", (x + 330, y + 3), w.TEXT_DIM, 15)
         y += 28
-        cols = [x, x + 200, x + 290, x + 380, x + 470, x + 610]
-        for cx, head in zip(cols, ("Word", "Tries", "Right", "Wrong", "Last practised", "")):
-            w.draw_text(s, head, (cx, y), w.TEXT_DIM, 17)
+        cols = [x, x + 150, x + 200, x + 310, x + 365, x + 420, x + 475, x + 540]
+        for cx, head in zip(cols, ("Word", "Box", "Next review", "Right", "Wrong", "Help", "Unclear", "")):
+            w.draw_text(s, head, (cx, y), w.TEXT_DIM, 16)
         y += 22
         hidden = self.tutor.hide_words
-        max_rows = 11
+        max_rows = 10
         if not rows:
             w.draw_text(s, "Nothing practised yet.", (x, y), w.TEXT_DIM, 18)
             y += 24
+        today = progress.today().isoformat()
         for i, word in enumerate(rows[:max_rows]):
             e = progress.word(word)
-            needs = progress.needs_practice(word)
-            colour = w.WARN if needs else w.TEXT
+            tricky = e["difficult_sessions"] >= 2
+            due = e["seen"] and (e["due_on"] or "") <= today
+            colour = w.WARN if tricky or (due and e["box"] <= 1) else w.TEXT
             label = f"word {i + 1}" if hidden and word in words else word
-            values = (label, e["attempts"], e["correct"], e["incorrect"], e["last_practised"] or "-",
-                      "practise again" if needs else "")
+            note = "tricky" if tricky else ("due" if due else "")
+            values = (label, e["box"] if e["seen"] else "-", e["due_on"] if e["seen"] else "new",
+                      e["correct"], e["incorrect"], e["hints"] + e["taught"], e["unclear"], note)
             for cx, v in zip(cols, values):
-                w.draw_text(s, str(v), (cx, y), colour, 18)
+                w.draw_text(s, str(v), (cx, y), colour, 17)
+            if e["seen"] and not hidden:
+                armed = self._armed_for(f"reset:{word}")
+                self._button(s, (right - 70, y - 2, 70, 20), "Sure?" if armed else "Reset",
+                             lambda wd=word: self._reset_word(wd), mouse,
+                             colour=(120, 50, 50) if armed else None, size=14)
             y += 22
         if len(rows) > max_rows:
             w.draw_text(s, f"... and {len(rows) - max_rows} more", (x, y), w.TEXT_DIM, 16)
             y += 22
-        y += 12
+        y += 10
         w.draw_text(s, "Recent sessions", (x, y), w.ACCENT, 19)
         y += 26
-        sessions = progress.sessions()[-6:][::-1]
+        sessions = progress.sessions(5)[::-1]
         if not sessions:
             w.draw_text(s, "No practice or tests finished yet.", (x, y), w.TEXT_DIM, 18)
         for sess in sessions:
             missed = ", ".join(sess.get("incorrect", [])) or "none"
             if hidden:
                 missed = "(hidden during test)"
-            text = (f"{sess['date']}  {sess['mode']:<8}  {sess['score']}/{sess['total']}   "
-                    f"to practise: {missed}")
-            w.draw_text(s, text, (x, y), w.TEXT, 17, max_width=right - x)
+            counts = sess.get("outcomes", {})
+            extra = ", ".join(f"{n} {k.replace('_', ' ')}" for k, n in sorted(counts.items())
+                              if k in ("taught", "unclear", "help_requested", "skipped"))
+            text = (f"{sess['date']}  {sess['mode']:<8}  {sess['score']}/{sess['total']}   to practise: {missed}"
+                    + (f"   ({extra})" if extra else ""))
+            w.draw_text(s, text, (x, y), w.TEXT, 16, max_width=right - x)
             y += 22
+        if self.message:
+            w.draw_text(s, self.message, (x, self.rect.bottom - 34), w.TEXT_DIM, 16, max_width=right - x)
+
+    def _draw_changes(self, s, mouse, x, right, y):
+        progress = self.robot.progress
+        w.draw_text(s, "What AlfieBot changed by itself, and why", (x, y), w.ACCENT, 19)
+        y += 26
+        w.draw_text(s, "Review boxes and earlier clues. Undo puts the old value back.", (x, y), w.TEXT_DIM, 15)
+        y += 24
+        hidden = self.tutor.hide_words
+        changes = progress.adaptations(12)
+        if not changes:
+            w.draw_text(s, "No changes yet.", (x, y), w.TEXT_DIM, 18)
+            y += 24
+        for a in changes:
+            target = "a word (hidden during test)" if hidden else a["target"]
+            text = f"{a['when']}  {target}: {a['reason']}"
+            colour = w.TEXT_DIM if a["reverted_at"] else w.TEXT
+            w.draw_text(s, text + ("  (undone)" if a["reverted_at"] else ""), (x, y), colour, 15,
+                        max_width=right - x - 80)
+            if not a["reverted_at"] and not hidden:
+                self._button(s, (right - 70, y - 2, 70, 20), "Undo", lambda i=a["id"]: self._undo(i), mouse, size=14)
+            y += 22
+        bottom = self.rect.bottom - 44
+        self._button(s, (x, bottom, 150, 28), "Export CSV", self._export, mouse)
+        armed = self._armed_for("reset_all")
+        self._button(s, (right - 220, bottom, 220, 28), "Click again to confirm" if armed else "Reset all learning",
+                     self._reset_all, mouse, colour=(120, 50, 50) if armed else None)
+        if self.message:
+            w.draw_text(s, self.message, (x, bottom - 26), w.TEXT_DIM, 16, max_width=right - x)

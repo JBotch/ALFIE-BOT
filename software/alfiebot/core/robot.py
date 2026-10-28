@@ -13,6 +13,10 @@ gets a short CELEBRATING bounce before AlfieBot speaks.
 Text that arrives while AlfieBot is thinking or talking is held and handled
 as soon as it is listening again.
 
+AI (V1 Phase 2): replies come from the brain (core/brain.py). Most are
+ready at once; an AI answer is worked out on a background thread while
+AlfieBot stays THINKING, and the robot polls for it each frame.
+
 Microphone (Stage 4): only open while AlfieBot is listening (or, in
 push_to_talk mode, while the button is held), never while it is thinking,
 talking or celebrating, and only if a parent has allowed it in the config.
@@ -25,18 +29,23 @@ import random
 from typing import Callable, List, Optional, Tuple
 
 from alfiebot.conversation.engine import ConversationEngine, Reply
-from alfiebot.conversation.intents import normalise, split_wake_phrase
+from alfiebot.conversation.intents import split_wake_phrase
+from alfiebot.core.brain import Brain, PendingReply
+from alfiebot.core.events import UserInput
 from alfiebot.core.state_machine import StateMachine
 from alfiebot.core.states import TALKING_STATES, Expression, RobotState, expression_for
 from alfiebot.core.transcript import Transcript
 from alfiebot.hardware.base import Platform
 from alfiebot.speech.mic_gate import MicGate
-from alfiebot.spelling.lists import SpellingLists
-from alfiebot.spelling.progress import ProgressTracker
-from alfiebot.spelling.tutor import CHOICES, SpellingTutor
+from alfiebot.learning.store import LearningProgress, WordLists, import_json
+from alfiebot.speech.wake_word import GrammarWakeWord
+from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.spelling.letter_input import heard_letters, letter_grammar
+from alfiebot.speech.base import TextToSpeech
+from alfiebot.speech.null import TranscriptOnlyTTS
 from alfiebot.speech.sounds import personality_sounds
 from alfiebot.speech.voice_profiles import get_personality, profile_for_reply
+from alfiebot.storage.database import Database
 from alfiebot.storage.json_store import JsonStore
 
 log = logging.getLogger(__name__)
@@ -46,6 +55,8 @@ LISTENING_STATES = {RobotState.LISTENING, RobotState.SPELLING_SETUP,
 ASLEEP_STATES = {RobotState.SLEEPING, RobotState.IDLE}
 BUSY_STATES = {RobotState.THINKING, RobotState.SPEAKING, RobotState.CELEBRATING, RobotState.ERROR}
 CELEBRATE_SECONDS = 1.3
+PONDER_AFTER = 1.5  # seconds of waiting for the AI before the eyes start to wander
+PONDER_EVERY = 3.0
 NEXT_STATE = {
     "listen": RobotState.LISTENING,
     "spelling_setup": RobotState.SPELLING_SETUP,
@@ -57,7 +68,8 @@ NEXT_STATE = {
 
 
 class AlfieBot:
-    def __init__(self, config: dict, platform: Platform, conversation: ConversationEngine = None):
+    def __init__(self, config: dict, platform: Platform, conversation: ConversationEngine = None,
+                 brain: Brain = None):
         self.config = config
         self.platform = platform
         self.name = config["robot"]["name"]
@@ -83,13 +95,32 @@ class AlfieBot:
         self.transcript = Transcript()
         self.mic_gate = MicGate()
         self.store = JsonStore(config["data_dir"])
-        self.spelling_lists = SpellingLists(self.store)
-        self.progress = ProgressTracker(self.store)
+        self.db = Database(config["data_dir"])
+        learning = config.get("learning", {})
+        self.spelling_lists = WordLists(self.db)
+        self.progress = LearningProgress(self.db, learning.get("review_days", (1, 2, 4, 7, 14)),
+                                         learning.get("max_session_words", 10), learning.get("confidence_words", 2))
+        try:
+            import_json(self.store, self.spelling_lists, self.progress)
+        except Exception:  # never stop AlfieBot starting; the JSON files are still there
+            log.exception("Couldn't copy the old spelling files into the database")
         spelling = config.get("spelling", {})
         self.tutor = SpellingTutor(self.spelling_lists, self.progress,
                                    min_confidence=speech.get("min_confidence", 0.75),
                                    confirm_spoken=spelling.get("confirm_spoken_answers", "always"),
-                                   phonetic=spelling.get("phonetic_words", "child"))
+                                   phonetic=spelling.get("phonetic_words", "child"),
+                                   reveal_after_test_mistake=bool(learning.get("reveal_after_test_mistake", False)),
+                                   recognition_mode=spelling.get("recognition_mode", "continuous"))
+        # Offline "Hey AlfieBot", only if a parent switches it on.
+        if not isinstance(self.platform.wake_word, GrammarWakeWord):
+            self.platform.wake_word = GrammarWakeWord(
+                self.platform.recognizer, bool(config["privacy"].get("wake_word_enabled", False)),
+                float(speech.get("wake_min_confidence", 0.7)))
+        self.brain = brain or Brain(config, self.conversation, self.tutor, db=self.db)
+        self._pending: Optional[PendingReply] = None
+        # Developer panel: voice output off shows replies in the transcript only.
+        self.voice_output = True
+        self._silent_tts = TranscriptOnlyTTS()
         self.letter_grammar = letter_grammar(spelling.get("phonetic_words", "child"))
         self.finish_after_pause = float(spelling.get("finish_after_pause", 5.0))
         self._letters_quiet = 0.0  # seconds since the last spoken letter
@@ -105,7 +136,28 @@ class AlfieBot:
         self._held_text: Optional[tuple] = None
         self._timers: List[Tuple[float, Callable[[], None]]] = []
         self._face_listeners = []
+        # Validated face commands (look, blink...) for the face view to apply.
+        self.face_commands: List = []
+        self._ponder_at = PONDER_AFTER  # a slow AI answer: the eyes look around while thinking
         self.state_machine.add_listener(self._on_state_change)
+
+    @property
+    def tts(self) -> TextToSpeech:
+        return self.platform.tts if self.voice_output else self._silent_tts
+
+    def set_voice_output(self, on: bool) -> None:
+        if on != self.voice_output:
+            self.tts.stop()
+            self.voice_output = on
+            log.info("Voice output %s", "on" if on else "off (transcript only)")
+
+    def _cancel_pending(self) -> None:
+        self.brain.cancel(self._pending)
+        self._pending = None
+
+    def close(self) -> None:
+        self._cancel_pending()
+        self.brain.close()
 
     # ---- face hookup -----------------------------------------------------
     def add_face_listener(self, listener) -> None:
@@ -149,7 +201,10 @@ class AlfieBot:
             self.play_sound("listen")
         if new in LISTENING_STATES:
             self.listen_time_left = self.listen_timeout
+        if new == RobotState.SLEEPING:
+            self.brain.memory.clear()  # AlfieBot forgets the conversation when it sleeps
         if new in ASLEEP_STATES:
+            self._cancel_pending()
             self.conversation.reset()
             self.tutor.stop()
         self._notify_face()
@@ -159,10 +214,24 @@ class AlfieBot:
         self.expression_override = None
         self._timers.clear()
         self._current_reply = None
+        self._cancel_pending()
         if self.state == RobotState.SPEAKING:
-            self.platform.tts.stop()
+            self.tts.stop()
         if not self.state_machine.set_state(state):
             self._notify_face()
+
+    def face_command(self, kind: str, value=None, seconds: float = 2.5) -> bool:
+        """Ask the face to look somewhere, blink, etc. (see face/controller.py).
+        Returns False, and does nothing, if the command isn't allowed."""
+        from alfiebot.face.controller import face_command
+
+        try:
+            self.face_commands.append(face_command(kind, value, seconds))
+        except (ValueError, TypeError) as exc:
+            log.warning("Face command refused: %s", exc)
+            return False
+        del self.face_commands[:-20]
+        return True
 
     def show_expression(self, expression) -> None:
         """Developer panel: preview an expression without changing state."""
@@ -203,7 +272,7 @@ class AlfieBot:
         if not self.running:
             log.warning("Ignored %r: %s is stopped. Press Start first.", text, self.name)
             return
-        if self.state in BUSY_STATES or self._timers:
+        if self.state in BUSY_STATES or self._timers or self._pending:
             # Answer it once AlfieBot has finished talking.
             self._held_text = (text, source, confidence, words)
             log.info("Holding %r until %s has finished talking", text, self.name)
@@ -232,7 +301,7 @@ class AlfieBot:
             self._wake("", by_button=True)
         elif self.state == RobotState.SPEAKING:
             log.info("Button: stop talking and listen")
-            self.platform.tts.stop()
+            self.tts.stop()
             self._finish_speaking(force_listen=True)
         elif self.state in LISTENING_STATES:
             self.listen_time_left = self.listen_timeout
@@ -243,9 +312,10 @@ class AlfieBot:
         if not self.running:
             self.start()
         if self.state in BUSY_STATES:
-            self.platform.tts.stop()
+            self.tts.stop()
         self._timers.clear()
         self._current_reply = None
+        self._cancel_pending()
         reply = self.tutor.start(mode)
         if self.state == RobotState.SLEEPING:
             self.state_machine.set_state(RobotState.IDLE)
@@ -276,13 +346,18 @@ class AlfieBot:
     def _think_then_reply(self, text: str, source: str = "typed", confidence: float = 1.0,
                           words=None) -> None:
         try:
-            reply = self._reply_to(text, source, confidence, words)
+            reply = self.brain.handle(UserInput(text, source, confidence, words))
         except Exception:
             log.exception("Failed to answer %r", text)
             self._error()
             return
+        if isinstance(reply, PendingReply):
+            # The AI is working on it in the background; update() collects it.
+            self._pending = reply
+            self.state_machine.set_state(RobotState.THINKING)
+            return
         if reply is None:
-            # Letters of a spelling: they show on screen; keep listening.
+            # Letters of a spelling: they build up in the tutor; keep listening.
             self._letters_quiet = 0.0
             self.listen_time_left = self.listen_timeout
             return
@@ -298,21 +373,27 @@ class AlfieBot:
         else:
             self._after(self.thinking_time, lambda: self._say(reply))
 
-    def _reply_to(self, text: str, source: str, confidence: float, words=None) -> Optional[Reply]:
-        if self.tutor.active:
-            reply = self.tutor.handle(text, source, confidence, words)
-            if not self.tutor.active:
-                self.conversation.reset()
-            return reply
-        reply = self.conversation.respond(text)
-        if reply.intent in ("spelling_help", "spelling_choice"):
-            norm = normalise(text)
-            choice = reply.detail or next((c for c, p in CHOICES if p.search(norm)), None)
-            if choice:
-                return self.tutor.start(choice, text)
-            self.tutor.start(None)  # menu; keep the conversation's wording
-            reply.then = "spelling_setup"
-        return reply
+    def _ponder(self) -> None:
+        """While a slow AI answer is on its way, AlfieBot glances around as if
+        thinking, so the face never looks frozen."""
+        if self._pending is None or self.state != RobotState.THINKING:
+            self._ponder_at = PONDER_AFTER
+            return
+        if self.state_machine.time_in_state >= self._ponder_at:
+            self._ponder_at += PONDER_EVERY
+            self.face_command("look_around")
+
+    def _collect_ai_reply(self) -> None:
+        reply = self.brain.poll(self._pending)
+        if reply is None:
+            return
+        self._pending = None
+        # Think for at least thinking_time, however fast the answer came.
+        wait = max(0.0, self.thinking_time - self.state_machine.time_in_state)
+        if reply.celebrate:
+            self._after(wait * 0.5, lambda: self._reply(reply))
+        else:
+            self._after(wait, lambda: self._say(reply))
 
     def _say(self, reply: Reply) -> None:
         reply = self._add_cheer(reply)
@@ -322,7 +403,7 @@ class AlfieBot:
         self.state_machine.set_state(RobotState.SPEAKING)
         self._notify_face()  # mood may differ even if already SPEAKING
         self.last_profile = self.profile_for(reply)
-        self.platform.tts.speak(reply.text, self.last_profile)
+        self.tts.speak(reply.text, self.last_profile)
 
     def profile_for(self, reply: Reply) -> str:
         """The voice profile for a reply: fixed in the panel, or chosen by the
@@ -366,10 +447,28 @@ class AlfieBot:
         return bool(self.config["privacy"]["microphone_enabled"])
 
     @property
+    def wake_word(self) -> GrammarWakeWord:
+        return self.platform.wake_word
+
+    def set_wake_word(self, enabled: bool) -> None:
+        """Parent setting: listen for "Hey AlfieBot" while asleep or idle."""
+        self.config["privacy"]["wake_word_enabled"] = enabled
+        if isinstance(self.wake_word, GrammarWakeWord):
+            self.wake_word.enabled = enabled
+        log.info("Parent setting: wake word %s", "on" if enabled else "off")
+
+    @property
+    def listening_for_wake_word(self) -> bool:
+        return (self.state in ASLEEP_STATES and self.wake_word.configured and self.mic_mode == "open"
+                and self.config["privacy"].get("wake_word_enabled", False))
+
+    @property
     def mic_should_be_open(self) -> bool:
         rec = self.platform.recognizer
         if not (self.running and self.mic_switch and self.mic_allowed_by_parent and rec.available):
             return False
+        if self.listening_for_wake_word:
+            return not self._timers and self.mic_gate.mic_allowed
         if self.state not in LISTENING_STATES or self._timers or not self.mic_gate.mic_allowed:
             return False
         if self.mic_mode == "push_to_talk":
@@ -378,11 +477,15 @@ class AlfieBot:
 
     @property
     def recognition_mode(self) -> str:
-        """"letters" while a spelling is being spoken, otherwise "conversation"."""
+        """"wake" while asleep with the wake word on, "letters" while a
+        spelling is being spoken, otherwise "conversation"."""
+        if self.listening_for_wake_word:
+            return "wake"
         return "letters" if self.tutor.stage is not None else "conversation"
 
     def spelling_letters(self):
-        """What to show while a child spells: ([(letter, sure)], letters still being heard)."""
+        """For the developer panel (never the robot's face) while a child spells:
+        ([(letter, sure)], letters still being heard)."""
         if self.tutor.stage is None:
             return [], ""
         rec = self.platform.recognizer
@@ -395,7 +498,9 @@ class AlfieBot:
         rec = self.platform.recognizer
         want = self.mic_should_be_open
         if want:
-            rec.set_grammar(self.letter_grammar if self.recognition_mode == "letters" else None)
+            mode = self.recognition_mode
+            rec.set_grammar(self.letter_grammar if mode == "letters" else
+                            self.wake_word.grammar if mode == "wake" else None)
             if not rec.listening:
                 rec.start_listening()
         elif rec.listening:
@@ -407,9 +512,19 @@ class AlfieBot:
             self.listen_time_left = max(self.listen_time_left, 3.0)
             self._letters_quiet = 0.0
         result = rec.poll()
+        if result is not None and self.state in ASLEEP_STATES:
+            # Asleep: only a clear "Hey AlfieBot" counts. Anything else is
+            # dropped here, so it never reaches the transcript.
+            if self.wake_word.configured and self.wake_word.check(result):
+                self.last_heard = (result.text, result.confidence)
+                self.handle_text(result.text, "voice", result.confidence, result.words)
+            result = None
         if result is not None:
             self.last_heard = (result.text, result.confidence)
+            letters_before = self.tutor.letters_heard
             self.handle_text(result.text, "voice", result.confidence, result.words)
+            if self.tutor.letters_heard > letters_before and self.tutor.recognition_mode == "letter_by_letter":
+                self.platform.sounds.play("letter")  # "got it", even when other effects are off
             if rec.listening and not self.mic_should_be_open:
                 rec.stop_listening()  # AlfieBot is about to think and reply
 
@@ -430,7 +545,10 @@ class AlfieBot:
     def update(self, dt: float) -> None:
         self.state_machine.update(dt)
         self.mic_gate.update(dt)
-        self.platform.tts.update(dt)
+        self.tts.update(dt)
+        if self._pending is not None:
+            self._collect_ai_reply()
+        self._ponder()
 
         if self._timers:
             due, waiting = [], []
@@ -442,13 +560,13 @@ class AlfieBot:
                 action()
 
         state = self.state
-        if state == RobotState.SPEAKING and self._current_reply and self.platform.tts.speaking:
+        if state == RobotState.SPEAKING and self._current_reply and self.tts.speaking:
             # Safety net in case a speech engine never reports that it finished.
             limit = 8.0 + 0.15 * len(self._current_reply.text)
             if self.state_machine.time_in_state > limit:
                 log.warning("Speech didn't finish after %.0f s; stopping it", limit)
-                self.platform.tts.stop()
-        if state == RobotState.SPEAKING and not self.platform.tts.speaking and self._current_reply:
+                self.tts.stop()
+        if state == RobotState.SPEAKING and not self.tts.speaking and self._current_reply:
             self._finish_speaking()
         elif state in LISTENING_STATES:
             self.listen_time_left -= dt

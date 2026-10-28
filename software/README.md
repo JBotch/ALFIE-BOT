@@ -4,8 +4,12 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.7: Bubbly Bot voice** (Stage 4 of 5, plus the speech
-recognition and voice upgrades).
+**Version 0.13: voice integration** (V1 Phase 6: an offline "Hey
+AlfieBot" wake word, spelling aloud one letter at a time or in a run, and a
+tool that measures both with synthetic voices). Version 0.12 added adaptive
+spelling; the cloud AI is off by default.
+The V1 plan is in [docs/](docs/): the audit of the existing software, the
+architecture and the development plan.
 
 > Tested on Linux with Python 3.13 and pygame 2.6.1 (all automated tests,
 > plus headless launches of both apps, and the espeak-ng voice). The speech
@@ -15,11 +19,365 @@ recognition and voice upgrades).
 > The Piper voice engine was tested with a stand-in voice only, because the
 > test machine couldn't download Piper voices (version 0.6 has since run
 > with the real Piper voice on Windows). The online comparison voice was
-> tested with a stand-in service only.
+> tested with a stand-in service only. The Ollama connection was tested
+> with a stand-in Ollama server only (no real model ran on the test
+> machine). The OpenAI connection was tested with a stand-in OpenAI server
+only; the real OpenAI service has not been called. The wake word and
+> `tools/measure_voice.py` were tested with a stand-in recogniser and voice
+> only at first; version 0.13 has since been measured on Windows with the
+> real speech model and the Cori Piper voice (see 0.13.1 below).
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
-> (GPIO button) is written but untested.
+> (GPIO button) is written but untested, and the face's frame rate on the Pi
+> hasn't been measured.
 
-## What version 0.7 adds: Bubbly Bot
+## Version 0.13.1: letters said clearly
+
+Measuring 0.13 on Windows with the real speech model and the Cori voice
+showed that the voice says some letters wrongly when it says them on their
+own: A came out as "eye", and F, L, M, N, S, X and Z rambled on for one to
+four seconds. That affected AlfieBot spelling words out to the child, not
+only the measurement. Now:
+
+- **Each letter is said after "Letter,"** with the voice's randomness off,
+  and only the part after the pause is kept, so you hear just the letter.
+  In a test on the laptop, 23 of 26 letters came out clean this way
+  (before: F, M, S, X and Z never did). If a letter has no clean pause, the
+  next carrier ("Letter... X.") or another spelling ("Vee", "Eff") is
+  tried, then the old way.
+- **British R:** "ah" now counts as R, and R and O are a "sounds alike"
+  pair, so AlfieBot asks "R for rabbit or O for orange?" when unsure.
+- Words the small speech model doesn't know (aitch, x-ray, backspace) are
+  left out of the spelling grammar. They were ignored anyway and filled
+  the console with warnings.
+- The Letter test has an **O/R** set.
+
+What the measurement found, and what's still open, is in
+`docs/voice_measurement_2026-10-28_laptop.md`.
+
+## What version 0.13 adds: voice integration
+
+- **"Hey AlfieBot" wake word, offline.** It uses the speech model AlfieBot
+  already has, so nothing new is downloaded. It's **off by default**: a
+  parent switches it on with **Wake word** (next to **Allow mic**). Then,
+  while AlfieBot is asleep or idle, the microphone listens only for "Hey
+  AlfieBot"; the panel shows "ON - only for Hey AlfieBot". Anything else is
+  ignored and never shown or saved, and the wake phrase has to be heard
+  clearly (`speech.wake_min_confidence`). The button still wakes AlfieBot
+  too, and push-to-talk mode never listens while asleep.
+- **Two ways to spell aloud** (**Letters:** button in Spelling homework, or
+  `spelling.recognition_mode`):
+  - *in a run* (as before): say the letters one after another, then
+    "finished";
+  - *one by one*: one letter per go. AlfieBot gives a tiny tick after each
+    letter it got, and if it hears two at once it keeps the first and asks
+    for the next.
+- **Measure it:** `tools/measure_voice.py` makes Piper say test words built
+  from letters that sound alike (B/D, M/N, P/T, F/S) at three speeds, and
+  the speech model hears them both ways. The report compares right first
+  time, how often AlfieBot would have to ask, wrong-but-sure answers, the
+  letter pairs, and the time per word. It also checks the wake word against
+  "Hey AlfieBot" and other sentences. Synthetic voices only, never a
+  recording of a child; results go to `benchmarks/results/` and
+  `data/alfiebot.db`, and audio is never saved.
+- The **Letter test** has a new **Pairs** set (B, D, M, N, P, T, F, S) for
+  testing with real adult voices.
+- **Time per answer** is saved with each spelling attempt, and the CSV
+  export shows it with the spelling mode, so the two modes can be compared
+  in real use too.
+- **AI replies** are spoken in the personality's voice profiles, with the
+  AI's chosen expression while AlfieBot talks. If an answer takes a while,
+  AlfieBot's eyes look around as if thinking.
+
+### Measure spelling aloud on your computer
+
+```powershell
+cd $HOME\AlfieBot\software
+.\.venv\Scripts\python.exe tools\measure_voice.py
+```
+
+It takes a few minutes and needs the speech model and a Piper voice
+(already there if AlfieBot talks and listens). Add `--noise 0 0.02` to also
+try a little background hiss.
+
+## What version 0.12 adds: adaptive spelling
+
+Python is still the examiner: it marks every answer, with or without any
+AI, and the robot's screen still shows only the face.
+
+- **Practice asks before it tells.** AlfieBot says the word and asks Alfie
+  to spell it. The spelling isn't said first any more. Then, for each word:
+  1. Letters AlfieBot wasn't sure of are checked ("B for ball or D for
+     dog?"), never marked wrong.
+  2. First mistake: encouragement ("You got the start right!") and another
+     go.
+  3. Second mistake, or "clue": a clue that doesn't give the spelling
+     away (how many letters, the beats "be... cause", then the first and
+     last letter).
+  4. Third mistake, "I don't know", or still stuck after both clues:
+     AlfieBot **teaches** it: the beats, the tricky part ("watch out for
+     the A-U"), a memory trick ("Big Elephants Can Always Understand Small
+     Elephants"), the spelling, and then Alfie tries straight away.
+  5. A taught word comes back at the end of the session and again the
+     next day.
+- **Tests don't give the answer away.** After a wrong answer AlfieBot says
+  "We'll practise it later" (a parent can change this with
+  `learning.reveal_after_test_mistake`).
+- **Spaced review.** Every word is in one of 5 boxes. Right first time with
+  no help moves it up a box; right after help keeps it where it is; taught,
+  wrong in a test or skipped puts it back in box 1. Box 1 comes back the
+  next day, then 2, 4, 7 and 14 days. Practice starts with words that are
+  due, then this week's new words, then the rest of this week's list,
+  plus a couple of learned words for confidence (at most 10).
+- **Tricky words.** A word that's wrong or taught in two different sessions
+  is marked "tricky", and AlfieBot gives its first clue sooner.
+- **Every answer is saved** in `data/alfiebot.db` with what happened:
+  correct, incorrect, unclear (a hearing problem, never a mistake), help
+  asked, taught or skipped, plus clues used and how sure the recogniser
+  was.
+- **Spelling homework panel, new tabs:**
+  - **Progress:** each word's box, next review, right, wrong, help and
+    unclear counts, "tricky" words, recent sessions, and a Reset per word.
+  - **Changes:** everything AlfieBot changed by itself and why (box moves,
+    earlier clues), each with **Undo**; **Export CSV** (saved in
+    `data/exports`); **Reset all learning** (two clicks, the lists are
+    kept).
+- **Your existing lists and progress are copied in** the first time
+  v0.12 starts. `data/spellings` and `data/progress.json` are left as they
+  were, as a backup.
+- A word in a list can have its own beats, tip and sentence (in a list
+  file: `"extras": {"island": {"syllables": "is-land", "tip": "An island
+  is land in the sea."}}`). Otherwise AlfieBot works them out itself.
+- New settings: a `learning` section (`review_days`, `max_session_words`,
+  `confidence_words`, `reveal_after_test_mistake`).
+
+## What version 0.11 adds: the hybrid router
+
+- **Python answers maths, time and date.** "What is 7 times 8", "twelve
+  take away five", "what's 17 divided by 5" (3 remainder 2), "what time is
+  it", "what day is it". Small AI models get sums wrong; these are exact
+  and never go to any AI.
+- **A privacy gate for the cloud.** The cloud AI (OpenAI) is **off by
+  default**. Even when a parent switches it on, a request only goes to the
+  cloud if the internet is up, an API key is set, today's budget isn't
+  used up, the cloud isn't resting after failures, the request is
+  "public" (nothing about the child: no "I", "my", "me" or numbers, no
+  personal details, nothing sensitive), and either:
+  - an adult typed it in an **adult test session** (spoken words never
+    count, because they could be a child's), or
+  - a parent has marked the **child-data review** as done (two clicks).
+
+  Personal and sensitive requests never go to the cloud in any mode, even
+  in an adult test session. A
+  slow local AI never sends anything to the cloud on its own; AlfieBot
+  asks the local AI for a shorter answer instead.
+- **Modes:** *Local only* (default), *Cloud only* (cloud if the gate allows,
+  otherwise local) and *Automatic* (local for everyday chat, cloud first
+  for "why / how / explain" questions if the gate allows).
+- **If an AI fails**, the other allowed AI is tried, then a hand-written
+  reply. After 3 failures in a row an AI rests for 60 seconds; if the
+  local AI is resting or not running, the pretend AI answers.
+- **Costs:** each cloud answer's tokens and estimated cost are saved (never
+  the words). The daily budget is $0.50 by default; once it's reached the
+  cloud isn't used until midnight. Prices are in `config/alfiebot.json`;
+  check them against the provider's price page.
+- **AI brain panel:** cloud Off/On, Pretend cloud or OpenAI, Adult test
+  session, Child-data review, whether the API key was found, today's spend,
+  and why the cloud is or isn't allowed. Each routing decision shows its
+  reasons.
+- New settings: a `cloud` section (`enabled`, `child_data_review_complete`,
+  `provider`, `model`, `api_key_env`, prices, `daily_budget_usd`, timeouts)
+  and a `router` section (`slow_local_s`, `unhealthy_after_failures`,
+  `cooldown_s`). `ai.cloud_enabled` moved to `cloud.enabled`.
+
+### Using the OpenAI cloud (adults only, optional)
+
+Only do this after reading OpenAI's terms and child-data rules. Use your
+own key and made-up test questions. **Don't mark the child-data review as
+done until those terms and safeguards have been checked.**
+
+1. Create an API key at <https://platform.openai.com/api-keys> and set a
+   low monthly limit there.
+2. Save it for your Windows user (it never goes in a settings file):
+
+   ```powershell
+   setx OPENAI_API_KEY "sk-...your key..."
+   ```
+
+   Close and reopen PowerShell, then start the simulator.
+3. In **AI brain**: Cloud **On**, choose **OpenAI**, mode **Cloud only**,
+   and switch on **Adult test session**. Type a question. The routing
+   decision says whether the cloud answered and why.
+4. To stop using it: Cloud **Off**, and remove the key with
+   `[Environment]::SetEnvironmentVariable("OPENAI_API_KEY", $null, "User")`.
+
+## Version 0.10.1: fixes from the first real benchmark
+
+The first benchmark on the Windows laptop ([docs/benchmark_2026-10-27_laptop.md](docs/benchmark_2026-10-27_laptop.md))
+showed the small models will go along with keeping a secret from mum, ask
+where a child lives, promise to "always be here for you", and spell words
+wrongly. So:
+
+- "Keep a secret", "where I live / my address" and "be my only friend"
+  now get a fixed, cheerful reply and never go to the AI.
+- AI replies are refused if they agree to keep secrets, ask where the
+  child lives, say they live with the child, promise to always be there, or
+  spell a word out letter by letter. Spelling questions already go to the
+  spelling menu.
+- Curly quotes and emoji from a model are cleaned up before AlfieBot says
+  them.
+- The default model is now `qwen3:1.7b` (all answers usable, about 2.7 s on
+  the laptop). `qwen3:0.6b` is faster (about 1.2 s) but copied example
+  answers. The personality's example answers were cut to two for the same
+  reason.
+- The benchmark marks questions AlfieBot answers without AI, and saves its
+  report so Windows shows apostrophes correctly.
+
+## What version 0.10 adds: a local AI brain
+
+- **A real AI, offline.** AlfieBot can now answer with a small AI model
+  running on this computer through [Ollama](https://ollama.com). Nothing
+  you say goes online. Hand-written replies (greetings, jokes, spellings)
+  still answer first; the AI answers everything else.
+- **AlfieBot never downloads a model by itself.** Install Ollama, then a
+  model, from PowerShell (see *Set up the local AI* below). Until then, or
+  if Ollama stops, the pretend AI answers and the AI brain panel says why.
+- **The same personality whatever AI answers**, set in
+  `config/personality.json`: joyful, playful, curious, a little robotic,
+  British English, short replies, at most one question. Every AI reply is
+  checked: it can't claim to be human, encourage Alfie to depend on it or
+  keep secrets, ask for personal details, include links or phone numbers,
+  or use unsuitable words. A reply that breaks a rule isn't said; AlfieBot
+  uses a hand-written reply instead.
+- **A short memory.** The AI sees the last few lines of the conversation,
+  so it can follow on. It's kept in memory only, never saved, and
+  forgotten when AlfieBot goes to sleep or after 5 quiet minutes.
+- **Personal details are masked** (names, addresses, phone numbers, emails,
+  schools, birthdays) before anything is remembered or shown to the AI.
+- **Worrying topics** (hurting yourself, someone hurting you, danger) never
+  go to the AI. AlfieBot gives a fixed, kind reply asking Alfie to tell a
+  grown-up they trust.
+- **AI brain panel:** choose **Pretend AI** or **Ollama** and the model;
+  Ollama's status; the last request's privacy class and what was masked.
+- **Statistics are saved** in `data/alfiebot.db` (a small SQLite
+  database): timings, token counts and errors per model and machine, never
+  what was said. **Reset all data** clears them.
+- **Model benchmark:** `tools/benchmark_models.py` asks each model 18
+  made-up questions (greetings, chat, explanations, tricky "are you a
+  real person?" and personal-detail questions) and saves a report and CSV
+  in `benchmarks/results/`.
+- New settings: `ai.local_provider`, `ai.local_model`, `ai.ollama_url`,
+  `ai.max_tokens`, and a `memory` section. `ai.timeout_s` is now 12 s.
+
+### Set up the local AI (Windows)
+
+1. Install Ollama: in PowerShell run `winget install --id Ollama.Ollama -e`
+   (or use the installer from <https://ollama.com>). It runs in the
+   background and starts with Windows.
+2. Install the models (about 2.7 GB in total):
+
+   ```powershell
+   ollama pull qwen3:0.6b
+   ollama pull gemma3:1b
+   ollama pull qwen3:1.7b
+   ```
+
+3. Start the simulator. The AI brain panel should say "Ollama ... running".
+   AlfieBot uses `qwen3:1.7b` unless you pick another model there.
+4. Compare the models on this computer:
+
+   ```powershell
+   .\.venv\Scripts\python.exe tools\benchmark_models.py
+   ```
+
+Models: Qwen3 is Apache 2.0. Gemma 3 is under Google's Gemma Terms of Use.
+To remove one: `ollama rm gemma3:1b`.
+
+## What version 0.9 added: the OLED face
+
+- **A new face**, following the reference design: a near-black screen,
+  two cyan rounded-square eyes with a soft glow and a small mouth. It's
+  drawn from numbers (no image files), so it fits any screen size and
+  every change of expression is a smooth morph.
+- **16 expressions:** Neutral, Happy, Curious, Sleepy, Surprised, Looking
+  Left, Looking Right, Looking Around, Thinking, Confused, Sad, Angry,
+  Love / Proud, Wink, Processing and Sleeping. Listening (wider eyes) and
+  Excited (celebrating) are kept for the robot's own states.
+- **It feels alive:** natural blinking at random times (sometimes a double
+  blink), both eyes moving together, small glances and the odd curious look
+  while idle, a gentle bounce when happy, a slow pulse while listening,
+  and floating ZZZ while asleep, waking up with a smooth transition.
+- **The mouth talks.** With the Piper voice, the mouth opens with the
+  loudness of what AlfieBot is saying; with other voices it uses a timed
+  animation. It settles back smoothly when AlfieBot stops.
+- **Face test panel** (developer only): click **Face test...** in the
+  panel. It opens under the robot screen, so the face stays in view: a
+  button for every expression, blink and double blink, look left, right,
+  up, down and around, a mouth test, animation speed (x0.25 to x2), reset
+  to neutral, and **Demo all 16**, which cycles through every expression.
+  The robot's screen itself only ever shows the face.
+- **One way in for the AI.** `alfiebot/face/controller.py` lists what an
+  AI reply (or any other code) may ask the face to do: an approved
+  expression, look somewhere, look around or blink. Anything else is
+  refused and logged. The AI can't ask for Angry, Sleeping, Sleepy or
+  Processing, and can't draw anything of its own.
+- **Keys 1-9** preview the first nine expressions, in the simulator and
+  face-only mode. `run_face.py --demo` (or D) cycles all 16.
+- New setting `face.blink_interval` (seconds between blinks, default
+  2.5 to 6). `tools/render_expressions.py` also saves an expression sheet.
+
+### What the face shows when
+
+| AlfieBot is... | The face |
+|---|---|
+| Asleep | Sleeping: closed eyes, a small "o" mouth, floating ZZZ |
+| Idle | Neutral, with blinks and small glances |
+| Listening | Listening: wider eyes, small mouth, a slow glow pulse |
+| Thinking (waiting for the AI) | Thinking: eyes up to the side, one eyebrow raised |
+| Speaking | The mood of the reply, with the mouth moving |
+| Pleased (a correct answer, finishing a test) | Happy, or Love / Proud at the end of a test |
+| Asking a question | Curious |
+| Unsure (didn't understand) | Confused |
+| Celebrating | Excited |
+| Something went wrong | Confused (never angry at a child) |
+
+## What version 0.8 added: the AI brain skeleton
+
+- **No more letters on the robot's face.** While Alfie spells, the robot's
+  screen shows only the eyes. The letters AlfieBot heard (with a `?` after
+  unsure ones) are shown in the developer panel under *Spelling homework*
+  instead.
+- **A brain** (`alfiebot/core/brain.py`) decides who answers. A running
+  spelling activity goes to the spelling tutor, and Python marks every
+  answer. Anything with a hand-written reply (greetings, jokes, "help me with
+  my spellings") gets that reply. Anything else goes to an AI.
+- **A pretend AI** for now. It gives a few in-character answers (try "I
+  like dinosaurs" or "why is the sky blue"), so the whole path can be tried
+  without installing a model. The real local model (Ollama) comes next.
+- **AI answers run in the background**, so the eyes keep animating in the
+  thinking face. If the AI fails, is too slow (8 s), or sends back something
+  broken, AlfieBot uses its hand-written "I didn't understand" reply
+  instead.
+- **AI output is checked before it is used.** It must say what to speak,
+  which face to make, and at most one action from a short allowed list
+  (celebrate, open the spelling menu, stop listening, go to sleep).
+  Anything else is dropped and logged. AI can never run commands, change
+  settings or move hardware.
+- **AI brain panel** (button at the top of the developer panel): AI on/off,
+  mode (local only, cloud only, automatic), model, the parent cloud switch
+  and an adult test session, switches to simulate the internet going down
+  or the AI failing, the last routing decision and why, and performance
+  statistics labelled with the machine that measured them.
+- **Cloud is off by default**, and even when a parent switches it on, a
+  child's words are never sent to it until privacy checks exist (Phase 4).
+  Only an adult test session can use it. The cloud is also pretend for now:
+  nothing leaves the computer.
+- **Speaker: on/off** at the top of the panel mutes AlfieBot (replies still
+  appear in the transcript and the mouth still moves).
+- **Reset all data** (was *Delete local data*) also clears the transcript
+  and AI statistics.
+- New settings section `ai` in `config/alfiebot.json`.
+
+## What version 0.7 added: Bubbly Bot
 
 - **A new voice personality, Bubbly Bot**: a cheerful, friendly cartoon
   robot. Choose **Classic** (the v0.6 voice) or **Bubbly Bot** in the Voice
@@ -382,7 +740,7 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 |---|---|---|
 | Panel | Start / Stop | Wake the robot (IDLE) / put it to sleep. Typed input is ignored while stopped |
 | Panel | Set state | Any of the ten states; the face follows |
-| Panel or keys 1-7 | Preview expression | Show one expression; 0 or "Follow state" goes back to the state's face |
+| Panel or keys 1-9 | Preview expression | Show one expression; 0 or "Follow state" goes back to the state's face |
 | Panel or Space | Robot button | Wakes AlfieBot, interrupts it to listen, or keeps it listening. In "hold button" mode, hold it while you talk |
 | Panel | Mic: on/off, Mode | Switch the microphone off for now; open mic or hold-to-talk |
 | Panel | Allow mic | Parent setting: the microphone can't open until this says yes |
@@ -392,8 +750,127 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Letter test | Letter recognition test and report |
 | Panel | Voice | Choose the voice, voice profile and speed; test them |
 | Panel | As: typing/speech, Conf: high/low | Send simulated speech as typing (marked at once) or as speech (letters build up), sure or unsure |
-| Panel | Delete local data | Click twice to delete the `data/` folder (spelling lists and progress) |
-| Face-only mode | 1-7, 0, D, Space, Esc | Expressions, follow state, demo cycle, button, quit |
+| Panel | Face test... | Every expression, blink, look, mouth test, speed, reset, demo of all 16 |
+| Panel | AI brain | AI mode, model, cloud switch, simulated failures, routing and performance |
+| Panel | Speaker: on/off | Mute AlfieBot's voice; replies still show in the transcript |
+| Panel | Reset all data | Click twice to delete the `data/` folder (spelling lists and progress) and clear the transcript and AI statistics |
+| Face-only mode | 1-9, 0, D, Space, Esc | Expressions, follow state, demo of all 16, button, quit |
+
+## What to test in version 0.13
+
+1. **Allow mic**, then **Wake word: on**. Stop talking to AlfieBot until it
+   goes idle: the microphone line says "ON - only for Hey AlfieBot".
+2. Say something else (it's ignored and not in the transcript), then "Hey
+   AlfieBot": it wakes and says hello. Try it from across the room.
+3. Switch **Wake word** off: the microphone closes while AlfieBot is idle.
+4. In Spelling homework, switch **Letters: one by one**, start a test and
+   spell a word one letter at a time. You hear a tick after each letter.
+   Try saying two letters at once.
+5. Run `tools\measure_voice.py` and look at the report in
+   `benchmarks\results`.
+6. Ask AlfieBot a "why" question with Ollama: the eyes look around while
+   it thinks, then it answers in its own voice.
+
+## What to test in version 0.12
+
+1. Start the simulator. Open **Spelling homework**: your lists are still
+   there, and **Progress** shows your earlier results (copied in once).
+2. Press **Practise**. AlfieBot says the first word and asks you to spell
+   it, without spelling it first.
+3. Spell it wrong once (you get encouragement), then again (a clue with
+   no letters), then a third time: AlfieBot teaches it and asks you to try
+   straight away. That word comes back at the end.
+4. Say "clue" and "I don't know" on another word.
+5. Say some letters with the microphone and check an unclear letter is
+   asked about, not marked wrong.
+6. Do a test and get one wrong: AlfieBot doesn't say the spelling.
+7. Look at **Progress** (boxes, next review) and **Changes** (reasons).
+   Try **Undo** on one change, and **Export CSV**.
+8. Close the simulator and start it again: everything is still there.
+
+## What to test in version 0.11
+
+1. Type "what is 7 times 8", "twelve take away five", "what's 17 divided
+   by 5", "what time is it" and "what day is it". AlfieBot answers straight
+   away and the routing line says no AI was used.
+2. In **AI brain**, check the cloud is **Off**, and the note says why the
+   cloud isn't allowed.
+3. Switch the cloud **On** with **Pretend cloud**, mode **Cloud only**.
+   Type "why is the sky blue": the cloud still isn't used (no adult test
+   session, review not done). Switch on **Adult test session** and type
+   it again: the pretend cloud answers.
+4. Still in the adult test session, type "my name is Sam and I am 7": it
+   stays local, and the reasons say it's personal.
+5. Click **Internet** to simulate it going down and keep chatting: the
+   local AI answers.
+6. Switch the cloud **Off** again before Alfie uses AlfieBot.
+
+## What to test in version 0.10
+
+1. Without Ollama: start the simulator, wake AlfieBot and type "I like
+   dinosaurs". The pretend AI answers, and **AI brain** says Ollama isn't
+   running and how to install it.
+2. Install Ollama and the models (above). Restart the simulator. **AI
+   brain** says Ollama is running and lists the models.
+3. Type a few things with no hand-written reply ("what is a volcano",
+   "I built a rocket", "are you a real person?"). The face thinks, then
+   AlfieBot answers in its own voice. Check the answers are short, kind and
+   sound like AlfieBot. The first answer can take a few seconds while the
+   model loads.
+4. Ask a follow-up ("what about a big one?"): it should follow on.
+5. Type "my name is Sam": **Last AI request** shows the name was masked.
+6. Type "I want to hurt myself": AlfieBot gives the fixed "tell a grown-up"
+   reply, and the panel shows no AI was used.
+7. Try each model in **AI brain**. If one is too slow (over 12 s),
+   AlfieBot gives a hand-written reply instead of hanging.
+8. Run `tools\benchmark_models.py` and look at the report in
+   `benchmarks\results`.
+9. Spelling practice and tests work exactly as before; the AI is never
+   asked about spellings.
+
+## What to test in version 0.9
+
+1. Start the simulator and press **Start**. The face should look like the
+   reference: cyan rounded-square eyes and a small smile. Watch it for a
+   minute: it blinks at random (sometimes twice), glances about and now and
+   then looks curious.
+2. Click **Face test...** and click through all 16 expressions. Each change
+   should morph smoothly, with no flicker or jump. Check that each one
+   looks right to you and Alfie.
+3. Try **Blink**, **Double blink**, the **Look** buttons and **Look
+   around**. Both eyes should move together.
+4. Turn on **Mouth test**, then off again: the mouth should move and then
+   settle back smoothly. Then type "Tell me a joke": the mouth moves while
+   AlfieBot talks (with Piper, it follows the voice).
+5. Set the speed to **x0.25** to watch transitions in slow motion, then
+   **Reset to neutral**.
+6. Click **Demo all 16** and leave it running for a minute.
+7. Press **Stop**: AlfieBot falls asleep with floating ZZZ. Press **Start**:
+   it wakes up smoothly.
+8. Start a spelling **Test** and spell some letters: spelling and voice work
+   as before, and the robot's face shows no letters.
+9. `python run_face.py --windowed --demo` shows the face alone, cycling
+   all 16 expressions. Press F11 for full screen, Esc to quit.
+
+## What to test in version 0.8
+
+1. Start the simulator, wake AlfieBot and type "I like dinosaurs". The face
+   should think, then answer with a pretend-AI reply. "Tell me a joke"
+   should still get a hand-written joke.
+2. Click **AI brain**. The last request shows which AI answered and why.
+   Set **Think time** to 2 s and type something new: the eyes keep moving
+   in the thinking face while you wait.
+3. Set **Local AI** to **Too slow**: after 8 s AlfieBot gives its
+   "didn't understand" reply instead of hanging. Try **Error** and **Bad
+   output** too, then set it back to **Working**.
+4. Set **Mode** to **Cloud only**. With the cloud off, the route says so
+   and the local AI answers. Turn the cloud **On (parent)**: it still isn't
+   used for normal input. Turn on **Adult test session**: now the pretend
+   cloud answers. Set **Internet** to **Offline**: the local AI takes over.
+5. Start a spelling **Test** and spell some letters by voice (or with
+   **As: speech**). The robot's face shows no letters; the panel does.
+6. Click **Speaker: off** and talk to AlfieBot: no sound, but the replies
+   appear in the transcript.
 
 ## What to test in version 0.7
 
@@ -432,7 +909,8 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 ## What to test in version 0.5
 
 1. Simulator: click **Allow mic**, then **Test** (or **Practise**). Spell the
-   word letter by letter. Watch the letters appear under the eyes.
+   word letter by letter. Watch the letters appear in the developer panel
+   (since 0.8 they are no longer shown under the eyes).
 2. Say a wrong letter, then "delete". Say "start again". Say "repeat".
 3. Say "finished". AlfieBot should read your letters back and only mark the
    word after you say yes.
@@ -522,17 +1000,26 @@ software/
   run_face.py              face only (for the robot's screen)
   config/alfiebot.json     settings, including the parent/privacy section
   examples/                example weekly spelling list
-  tools/render_expressions.py   saves a PNG of every expression
+  config/personality.json  AlfieBot's personality for AI replies
+  benchmarks/questions.json     made-up questions for the model benchmark
+  tools/benchmark_models.py     compares local AI models on this computer
+  tools/render_expressions.py   saves a PNG of every expression and an expression sheet
   tools/check_speech.py    tests the voice and microphone on their own
   tools/letter_test.py     letter recognition test and report
+  tools/measure_voice.py   spelling aloud and wake word, measured with Piper voices
   tools/download_voice.py  downloads a Piper voice (British English)
   requirements-cloud.txt   optional: online comparison voice (edge-tts)
   tests/                   automated tests (pytest)
   alfiebot/
     main.py                entry point and command-line options
     config.py              loads config/alfiebot.json over built-in defaults
-    core/                  robot, state machine, states -> expressions, transcript
-    face/                  poses (numbers per expression), engine (animation), renderer (pygame)
+    core/                  robot, brain (who answers), actions (checks AI output),
+                           personality (prompt and style checks), memory (short-term),
+                           safety (worrying topics, personal details, output rules),
+                           tools (maths, time and date answered by Python),
+                           events, state machine, states -> expressions, transcript
+    face/                  poses (numbers per expression), engine (blinks, glances, mouth, transitions),
+                           renderer (pygame), controller.py (what the AI may ask the face to do)
     speech/                base.py (interfaces), tts.py (engine choice and fallback,
                            Windows voice, espeak-ng), piper_tts.py (Piper voices),
                            voice_profiles.py (profiles; Classic and Bubbly Bot personalities),
@@ -540,14 +1027,27 @@ software/
                            cloud_tts.py (optional online comparison voice),
                            vosk_recognizer.py (offline mic), text.py (letters for speech),
                            mic_gate.py keeps the mic deaf while AlfieBot talks,
+                           wake_word.py (offline "Hey AlfieBot" with the speech model),
+                           letter_compare.py (one letter at a time vs a run, synthetic voices),
                            letter_test.py (letter recognition test and report)
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
+    ai/                    provider_base.py (provider interface), mock_provider.py (pretend AI),
+                           local_provider.py (Ollama), cloud_provider.py (OpenAI, off by default),
+                           router.py (privacy gate; which provider answers, and why), connectivity.py,
+                           performance.py (latency, tokens, errors per provider and machine)
+    learning/              store.py (lists, progress, sessions, attempts, adaptations in SQLite;
+                           undo, reset, CSV export, one-off JSON import), schedule.py (5 review
+                           boxes), teaching.py (beats, clues that don't give the spelling away,
+                           the teaching step)
     spelling/              words.py (letters, spoken letter names), letter_input.py (spoken
                            spelling: letters, commands, unsure letters), lists.py (weekly lists),
-                           progress.py, tutor.py (add / learn / test), responses.json
+                           progress.py (the old JSON files, now only imported once),
+                           tutor.py (add / practise with the teaching ladder / test), responses.json
     hardware/              simulator vs Raspberry Pi (button), auto-detected
-    storage/               local JSON files (atomic writes, delete all)
-    ui/                    simulator window, widgets and face-only app
+    storage/               local JSON files (atomic writes, delete all), database.py (SQLite
+                           AI statistics, with migrations)
+    ui/                    simulator window, widgets, panels (face test, AI brain, voice,
+                           spelling, letter test) and the face-only app
 ```
 
 The core (`core/`, `face/engine.py`, `speech/`, `storage/`) doesn't import
@@ -557,14 +1057,29 @@ that implements the interface in `speech/base.py`.
 
 ## Privacy
 
-- Everything runs offline. There is no internet chatbot.
+- Everything runs offline by default. The AI runs on this computer
+  (Ollama) or is the pretend AI inside the program. The cloud AI is off by
+  default. When a parent turns it on, a child's words are still never sent
+  unless the parent has also marked the child-data review as done, and
+  even then only "public" requests (nothing about the child) can go.
+  Spoken words only go when that review is done. The API key comes from
+  an environment variable and is never saved or logged.
+- The AI's conversation memory is kept in memory only and forgotten when
+  AlfieBot sleeps. Personal details are masked before the AI sees anything.
+  The statistics database stores timings, never words.
 - The microphone is off until a parent allows it (**Allow mic**, saved as
   `privacy.microphone_enabled`), it only opens while AlfieBot is listening,
-  and its status is always shown in the panel.
+  and its status is always shown in the panel. The wake word is a separate
+  parent setting (`privacy.wake_word_enabled`, off): only when it's on does
+  the microphone also stay open while AlfieBot is asleep or idle, listening
+  for "Hey AlfieBot" alone, on this computer; anything else is dropped.
 - Audio is processed in memory and never saved; there is no code that
   records it. Speech recognition and AlfieBot's voice (Piper, Windows or
   espeak-ng) run on the computer, not online. The only downloads are the
   speech model and voices, once, when you run the download tools.
-- The transcript is kept in memory only. Spelling lists and progress are
-  saved as JSON in `data/` on this computer only, and **Delete local data**
-  removes them.
+- The transcript is kept in memory only. Spelling lists, progress and the
+  adaptations log are saved in `data/alfiebot.db` on this computer only
+  (the older JSON files stay in `data/` as a backup). They are never sent
+  to any AI, local or cloud. **Reset all learning** deletes the progress,
+  **Export CSV** gives a parent a copy, and **Reset all data** removes
+  everything.

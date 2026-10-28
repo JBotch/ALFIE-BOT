@@ -3,10 +3,12 @@ from alfiebot.core.states import STATE_EXPRESSIONS, Expression, RobotState
 from alfiebot.face.poses import BEHAVIOURS, POSES
 
 
-def test_all_ten_states_and_seven_expressions_exist():
+def test_all_ten_states_and_eighteen_expressions_exist():
     assert len(RobotState) == 10
     assert [e.value for e in Expression] == [
-        "sleeping", "idle", "listening", "thinking", "happy", "excited", "confused"]
+        "neutral", "happy", "curious", "sleepy", "surprised", "looking_left", "looking_right",
+        "looking_around", "thinking", "confused", "sad", "angry", "love", "wink", "processing",
+        "sleeping", "listening", "excited"]
 
 
 def test_every_state_has_an_expression():

@@ -10,10 +10,12 @@ from alfiebot.core.states import Expression, RobotState
 from alfiebot.hardware.simulator import create_simulator_platform
 
 
-def make_robot(**timing):
+def make_robot(ai=True, **timing):
     config = load_config()
     config["conversation"].update(timing)
+    config["ai"]["enabled"] = ai
     config["data_dir"] = tempfile.mkdtemp(prefix="alfiebot-test-")
+    config["ai"]["local_provider"] = "mock"  # never a real Ollama in tests
     robot = AlfieBot(config, create_simulator_platform(config, speech=False),
                      ConversationEngine("AlfieBot", rng=random.Random(0)))
     states = []
@@ -123,7 +125,7 @@ def test_text_while_talking_is_answered_afterwards():
 
 
 def test_fallback_shows_confused_face_while_talking():
-    robot, _ = make_robot()
+    robot, _ = make_robot(ai=False)
     robot.start()
     say(robot, "Hey AlfieBot")
     finish_talking(robot)
@@ -228,7 +230,8 @@ def test_spelling_practice_by_conversation():
     say(robot, "practise them")
     finish_talking(robot)
     assert robot.state == RobotState.SPELLING_PRACTICE
-    assert "B-E-C-A-U-S-E" in robot_lines(robot)[-1]
+    assert "spell because" in robot_lines(robot)[-1].lower()
+    assert "B-E-C-A-U-S-E" not in robot_lines(robot)[-1]  # asked, not told
     say(robot, "because")
     tick(robot, 0.6)
     assert robot.state == RobotState.CELEBRATING

@@ -2,9 +2,9 @@ import random
 
 import pytest
 
+from tests.learning_helpers import make_tutor
+
 from alfiebot.core.states import Expression
-from alfiebot.spelling.lists import SpellingLists
-from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.storage.json_store import JsonStore
 
@@ -13,8 +13,7 @@ WEEK = "2026-W44"
 
 @pytest.fixture
 def tutor(tmp_path):
-    store = JsonStore(tmp_path)
-    t = SpellingTutor(SpellingLists(store), ProgressTracker(store), random.Random(3))
+    t = make_tutor(tmp_path, random.Random(3))
     t.active_week = WEEK
     return t
 
@@ -63,20 +62,51 @@ def test_no_words_yet(tutor):
 def test_learning_mode_steps(tutor):
     with_words(tutor, "because", "friend")
     r = tutor.start("practice")
-    # 1. say the word, 2. spell it letter by letter, 4. ask the child to try
-    assert "because" in r.text and "B-E-C-A-U-S-E" in r.text and "Spell because" in r.text or "try" in r.text
+    # Ask first: the word is said, but its spelling isn't.
+    assert "because" in r.text and "B-E-C-A-U-S-E" not in r.text and "spell because" in r.text.lower()
     assert r.then == "spelling_practice"
-    assert "B... E... C..." in tutor.handle("spell it slower").text
+    assert "be... cause" in tutor.handle("spell it slower").text  # beats, not letters
     assert tutor.handle("repeat that").text == tutor.last_reply.text
     clue = tutor.handle("give me a clue").text
-    assert "B" in clue and "7" in clue
-    assert "B-E-C-_" in tutor.handle("another clue").text
+    assert "7 letters" in clue and "be... cause" in clue and "B-E" not in clue
+    bigger = tutor.handle("another clue").text
+    assert "starts with B" in bigger and "ends with E" in bigger and "B-E-C" not in bigger
     wrong = tutor.handle("b e c o s")
-    assert "B-E-C-A-U-S-E" in wrong.text and wrong.then == "spelling_practice"  # 5. encourage, try again
+    # Two clues already: the next mistake teaches the word.
+    assert "B-E-C-A-U-S-E" in wrong.text and "Elephants" in wrong.text and wrong.then == "spelling_practice"
     right = tutor.handle("because")
     assert right.celebrate and right.mood == Expression.EXCITED
     assert "friend" in right.text  # moves on by itself
     assert tutor.current_word == "friend"
+
+
+def test_first_mistake_encourages_without_the_spelling(tutor):
+    with_words(tutor, "because")
+    tutor.start("practice")
+    r = tutor.handle("becos")
+    assert "start right" in r.text and "B-E-C" not in r.text
+    r = tutor.handle("becos")
+    assert "7 letters" in r.text and "B-E-C" not in r.text  # second mistake: a clue
+    assert tutor.current_word == "because"
+
+
+def test_i_dont_know_teaches_straight_away(tutor):
+    with_words(tutor, "friend", "people")
+    tutor.start("practice")
+    r = tutor.handle("I don't know")
+    assert "F-R-I-E-N-D" in r.text and "Now you try" in r.text
+    assert tutor.current_word == "friend"
+    assert tutor.handle("friend").celebrate
+    # Taught words come back at the end of the session to try again.
+    assert tutor.current_word == "people"
+    r = tutor.handle("people")
+    assert tutor.current_word == "friend" and "again" in r.text
+    assert "F-R-I-E-N-D" not in r.text
+    r = tutor.handle("friend")
+    assert tutor.mode == "after_practice"
+    assert tutor.progress.sessions()[-1]["incorrect"] == ["friend"]  # taught, so not right first time
+    assert tutor.progress.word("friend")["box"] == 1  # taught: due again tomorrow
+    assert tutor.progress.word("friend")["taught"] == 1
 
 
 def test_learning_next_and_start_again(tutor):
@@ -88,14 +118,18 @@ def test_learning_next_and_start_again(tutor):
     assert tutor.current_word == "because" and "first word" in r.text
 
 
-def test_learning_moves_on_after_three_tries(tutor):
+def test_learning_teaches_after_three_tries_then_moves_on(tutor):
     with_words(tutor, "because", "friend")
     tutor.start("practice")
-    for _ in range(3):
-        r = tutor.handle("bekos")
+    replies = [tutor.handle("bekos").text for _ in range(3)]
+    assert all("B-E-C" not in r for r in replies[:2])  # no spelling before the teaching step
+    assert "B-E-C-A-U-S-E" in replies[2]  # third mistake: taught
+    assert tutor.current_word == "because"  # try once more straight away
+    r = tutor.handle("bekos")
     assert tutor.current_word == "friend"
-    assert "tricky" in r.text.lower()
+    assert "tricky" in r.text.lower() or "soon" in r.text.lower()
     assert tutor.progress.needs_practice("because")
+    assert tutor.words[-1] == "because"  # comes back later in the session
 
 
 def test_test_mode_hides_spelling_and_scores(tutor):
@@ -107,7 +141,8 @@ def test_test_mode_hides_spelling_and_scores(tutor):
     tutor.handle(first)  # right
     second = tutor.current_word
     r = tutor.handle("wrong")
-    assert "-".join(second.upper()) in r.text  # supportive feedback shows the right spelling
+    assert "-".join(second.upper()) not in r.text  # the spelling isn't given away in a test
+    assert second in r.text and "practise" in r.text
     third = tutor.current_word
     r = tutor.handle(third)
     assert "2 out of 3" in r.text
@@ -158,8 +193,9 @@ def test_test_repeat_word_and_skip(tutor):
     word = tutor.current_word
     assert word in tutor.handle("say it again").text
     r = tutor.handle("I don't know")
-    assert "-".join(word.upper()) in r.text
-    assert tutor.progress.word(word)["incorrect"] == 1
+    assert "-".join(word.upper()) not in r.text and "later" in r.text
+    entry = tutor.progress.word(word)
+    assert entry["incorrect"] == 0 and entry["box"] == 1  # skipped, not a mistake; practised again soon
 
 
 def test_stop_part_way(tutor):

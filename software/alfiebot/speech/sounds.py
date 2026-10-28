@@ -16,12 +16,13 @@ from typing import Dict, List, Optional, Tuple
 log = logging.getLogger(__name__)
 
 RATE = 22050
-EFFECTS = ("wake", "listen", "celebrate")
+EFFECTS = ("wake", "listen", "celebrate", "letter")
 
 # (start Hz, end Hz, seconds) notes; a note's pitch glides from start to end.
 NOTES: Dict[str, List[Tuple[float, float, float]]] = {
     "wake": [(520, 780, 0.09), (780, 1170, 0.09), (1170, 1560, 0.16)],  # rising "boot up" chirp
     "listen": [(1320, 1760, 0.07)],  # one soft blip
+    "letter": [(1980, 1980, 0.035)],  # a tiny tick: "got that letter" (one-at-a-time spelling)
     "celebrate": [(1047, 1047, 0.07), (1319, 1319, 0.07), (1568, 1568, 0.07), (2093, 2093, 0.22)],
 }
 

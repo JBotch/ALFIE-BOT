@@ -7,7 +7,7 @@ well they were recognised.
     python tools/letter_test.py --report                     sum up every saved test
     python tools/letter_test.py --typed                      no microphone: type what was "heard"
 
-Sets: all, confusing, B/D/P, C/G/T, M/N, F/S, A/H/J.
+Sets: all, confusing, pairs (B/D, M/N, P/T, F/S), B/D/P, C/G/T, M/N, F/S, A/H/J.
 Results (not audio) are saved in data/letter_tests/. Audio is never saved.
 """
 

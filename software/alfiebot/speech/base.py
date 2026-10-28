@@ -70,6 +70,13 @@ class TextToSpeech(ABC):
     def speaking(self) -> bool:
         return False
 
+    @property
+    def level(self) -> Optional[float]:
+        """Loudness of the audio playing right now, 0..1, for the mouth
+        animation; None if this engine can't tell (the face then uses a
+        timed animation)."""
+        return None
+
     def stop(self) -> None:
         pass
 

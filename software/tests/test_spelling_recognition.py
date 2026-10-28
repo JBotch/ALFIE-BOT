@@ -6,10 +6,10 @@ import random
 
 import pytest
 
+from tests.learning_helpers import make_tutor as new_tutor
+
 from alfiebot.spelling.letter_input import (Command, Letter, LetterSequence, Unknown, confusable_with,
                                            heard_letters, letter_grammar, parse_letters)
-from alfiebot.spelling.lists import SpellingLists
-from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.speech.vosk_recognizer import parse_result
 from alfiebot.storage.json_store import JsonStore
@@ -18,8 +18,7 @@ WEEK = "2026-W44"
 
 
 def make_tutor(tmp_path, *words, **kwargs):
-    store = JsonStore(tmp_path)
-    t = SpellingTutor(SpellingLists(store), ProgressTracker(store), random.Random(5), **kwargs)
+    t = new_tutor(tmp_path, random.Random(5), **kwargs)
     t.active_week = WEEK
     t.lists.add_words(WEEK, list(words))
     return t
@@ -62,7 +61,16 @@ def test_confusion_sets():
     assert confusable_with("d") == ["b", "d", "p"]
     assert confusable_with("n") == ["m", "n"]
     assert confusable_with("j") == ["a", "h", "j"]
-    assert confusable_with("o") == ["o"]
+    assert confusable_with("o") == ["o", "r"]  # British R ("ah") is heard as "oh"
+    assert confusable_with("w") == ["w"]
+
+
+def test_british_r_and_words_vosk_does_not_know():
+    assert parse_letters("ah", [("ah", 0.9)], 0.9)[0].letter == "r"
+    grammar = letter_grammar("child")
+    assert "ah" in grammar
+    for word in ("aitch", "haitch", "backspace", "x-ray", "xray"):
+        assert word not in grammar
 
 
 def test_grammar_has_letters_commands_and_phonetic_words():
@@ -187,7 +195,9 @@ def test_target_word_is_never_used_to_fix_what_was_heard(tmp_path):
     tutor.handle("the first one", "voice")
     tutor.handle("yes", "voice")
     assert tutor.progress.word("dog")["incorrect"] == 1
-    assert tutor.progress.data["words"]["dog"]["history"][-1]["answer"] == "bog"
+    last = tutor.progress.db.query("SELECT answer, clarifications, min_confidence FROM attempts "
+                                   "WHERE word = 'dog' ORDER BY id DESC LIMIT 1")[0]
+    assert last["answer"] == "bog" and last["clarifications"] == 1 and last["min_confidence"] == 0.4
 
 
 def test_clarify_answer_that_is_still_unsure_asks_again(tmp_path):
