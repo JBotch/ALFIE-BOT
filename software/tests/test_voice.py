@@ -14,7 +14,7 @@ from alfiebot.core.states import Expression
 from alfiebot.hardware.simulator import create_simulator_platform
 from alfiebot.speech import tts as tts_module
 from alfiebot.speech.null import TranscriptOnlyTTS
-from alfiebot.speech.piper_tts import PiperTTS, _trim
+from alfiebot.speech.piper_tts import PiperTTS, _trim, cut_after_pause
 from alfiebot.speech.text import Pause, Say, SayLetter, plan_speech
 from alfiebot.speech.tts import create_tts, engine_order, wait_until_quiet
 from alfiebot.speech.voice_profiles import DEFAULT_PROFILES, load_profiles, profile_for_reply
@@ -169,6 +169,7 @@ class FakeSD:
 class FakeVoice:
     calls = []
     gate = None
+    pauses = True  # punctuation is silent, as with a real voice
 
     def __init__(self):
         self.config = types.SimpleNamespace(sample_rate=1000)
@@ -177,9 +178,10 @@ class FakeVoice:
         FakeVoice.calls.append((text, syn_config))
         if FakeVoice.gate is not None:
             FakeVoice.gate.wait(2)
-        # 0.1 s of "sound" per character, quiet edges for letters.
-        loud = (b"\x00\x10" * 100) * len(text)
-        yield types.SimpleNamespace(audio_int16_bytes=b"\x00\x00" * 50 + loud + b"\x00\x00" * 50)
+        # 0.1 s of "sound" per character (silence for punctuation), quiet edges.
+        quiet = ",.;" if FakeVoice.pauses else ""
+        audio = b"".join((b"\x00\x00" if c in quiet else b"\x00\x10") * 100 for c in text)
+        yield types.SimpleNamespace(audio_int16_bytes=b"\x00\x00" * 50 + audio + b"\x00\x00" * 50)
 
 
 class FakeConfig:
@@ -197,6 +199,7 @@ def piper(tmp_path):
     model.write_bytes(b"")
     FakeVoice.calls.clear()
     FakeVoice.gate = None
+    FakeVoice.pauses = True
     FakeSD.streams.clear()
     return PiperTTS(model, volume=80, piper_module=fake_piper, sounddevice_module=FakeSD)
 
@@ -205,7 +208,8 @@ def test_piper_speaks_sentences_and_separate_letters(piper):
     piper.speak("Spell cat. C-A-T.", "teacher")
     wait_until_quiet(piper, 5)
     texts = [text for text, _ in FakeVoice.calls]
-    assert texts == ["Spell cat.", "C", "ay", "T"]  # each letter made on its own
+    # Each letter made on its own, after "Letter," (a lone "M" or "ay" comes out wrong).
+    assert texts == ["Spell cat.", "Letter, C.", "Letter, A.", "Letter, T."]
     syn = FakeVoice.calls[0][1]
     assert syn.length_scale == pytest.approx(1 / TEACHER.rate)  # slower
     assert syn.volume == pytest.approx(0.8)
@@ -218,9 +222,35 @@ def test_piper_speaks_sentences_and_separate_letters(piper):
 def test_piper_letters_are_cached_and_trimmed(piper):
     piper.speak_letters("tt")
     wait_until_quiet(piper, 5)
-    assert [text for text, _ in FakeVoice.calls] == ["T"]
+    assert [text for text, _ in FakeVoice.calls] == ["Letter, T."]
     raw = b"\x00\x00" * 1000 + b"\x00\x10" * 10 + b"\x00\x00" * 1000
     assert len(_trim(raw)) < len(raw)
+
+
+def test_piper_letters_are_steady_and_only_the_letter_is_kept(piper):
+    audio = piper.letter_audio("m", NORMAL)
+    syn = FakeVoice.calls[-1][1]
+    assert syn.noise_scale == 0 and syn.noise_w_scale == 0  # the same audio every time
+    # "Letter, M." is 1.05 s with its edges; only " M" (0.2 s) and a short lead-in are kept.
+    assert 0.2 <= len(audio) / 2 / 1000 < 0.3
+    assert audio == piper.letter_audio("M", NORMAL)
+
+
+def test_cut_after_pause_uses_the_longest_pause_before_the_end():
+    rate, s, q = 1000, b"\x00\x10", b"\x00\x00"
+    raw = q * 50 + s * 300 + q * 60 + s * 100 + q * 120 + s * 200 + q * 400
+    clip = cut_after_pause(raw, rate)
+    assert len(clip) // 2 == 20 + 200 + 17  # lead-in, the letter, a short tail
+    assert cut_after_pause(q * 50 + s * 500 + q * 300, rate) is None  # no pause
+
+
+def test_piper_letter_without_a_pause_falls_back_to_the_letter_alone(piper):
+    FakeVoice.pauses = False
+    piper.letter_audio("s", NORMAL)
+    texts = [text for text, _ in FakeVoice.calls]
+    assert texts == ["Letter, S.", "Letter... S.", "Letter; S.", "S"]
+    piper.letter_audio("f", NORMAL)
+    assert "Letter, Eff." in [text for text, _ in FakeVoice.calls]  # another spelling first
 
 
 def test_piper_profiles_change_speed_and_expressiveness(piper):

@@ -11,6 +11,11 @@ is saved. Runs on Windows and on the Raspberry Pi 5.
 Speed, volume and the pauses come from the voice profile. Piper can't
 change pitch or act out feelings; the profile's "expressiveness" only
 gives a little more or less variation in rhythm and tone.
+
+Letters are made differently. Said on its own, a letter name like "M", "S"
+or "X" is too short for the voice model, which rambles on for seconds, and
+"ay" comes out as "eye". So each letter is said after "Letter," with the
+randomness turned off, and only the part after the pause is kept.
 """
 
 import logging
@@ -30,6 +35,14 @@ DEFAULT_VOICE = "en_GB-cori-medium"
 NOISE_SCALE = 0.667
 NOISE_W = 0.8
 BLOCK_SECONDS = 0.05
+# Letters: said after a carrier with a pause in it, then cut out at the pause.
+LETTER_CARRIERS = ("Letter, {}.", "Letter... {}.", "Letter; {}.")
+LETTER_SPELLINGS = {"F": ("F", "Eff"), "V": ("V", "Vee")}
+QUIET = 300  # at volume 90; scaled with the volume
+MIN_GAP_S = 0.05
+GAP_AFTER_S = 0.25
+LEAD_IN_S = 0.02
+MAX_LETTER_S = 0.8
 
 
 def voice_dir(config: dict = None) -> Path:
@@ -80,20 +93,21 @@ class PiperTTS(SegmentedTTS):
         log.info("Piper voice loaded: %s", self.voice_name)
 
     # ---- making audio ------------------------------------------------------
-    def synthesize(self, text: str, profile) -> bytes:
+    def synthesize(self, text: str, profile, steady: bool = False) -> bytes:
         """16-bit mono audio for ``text`` at the profile's speed, pitch and volume.
 
         Pitch: the speech is made slower by the pitch factor, then played
         back that much faster (resampled). The timing ends up as asked and the
-        voice is higher, without the "fast-forward" effect of speeding up."""
+        voice is higher, without the "fast-forward" effect of speeding up.
+        ``steady`` turns the voice's randomness off (the same audio every time)."""
         factor = 2 ** (self.pitch(profile) / 12)
         length = factor / self.rate(profile)
-        audio = self._synthesize(text, profile, length)
+        audio = self._synthesize(text, profile, length, steady)
         return audio if abs(factor - 1) < 1e-3 else resample(audio, factor)
 
-    def _synthesize(self, text: str, profile, length: float) -> bytes:
-        noise = NOISE_SCALE * profile.expressiveness
-        noise_w = NOISE_W * profile.expressiveness
+    def _synthesize(self, text: str, profile, length: float, steady: bool = False) -> bytes:
+        noise = 0.0 if steady else NOISE_SCALE * profile.expressiveness
+        noise_w = 0.0 if steady else NOISE_W * profile.expressiveness
         volume = self.volume / 100 * profile.volume
         config_cls = getattr(self._piper, "SynthesisConfig", None)
         if config_cls is not None:  # piper-tts 1.3 and later
@@ -147,8 +161,23 @@ class PiperTTS(SegmentedTTS):
         key = (letter, self.rate(profile), self.pitch(profile), self.volume, profile.volume,
                profile.expressiveness)
         if key not in self._letters:
-            self._letters[key] = _trim(self.synthesize(letter_sound(letter), profile))
+            self._letters[key] = self.letter_audio(letter, profile)
         self._write(self._letters[key], cancel)
+
+    def letter_audio(self, letter: str, profile) -> bytes:
+        """One letter's name, said clearly (see the module notes)."""
+        letter = letter.upper()
+        if not ("A" <= letter <= "Z"):
+            return _trim(self.synthesize(letter_sound(letter), profile))
+        quiet = max(50, int(QUIET * self.volume / 100 * profile.volume / 0.9))
+        for spelling in LETTER_SPELLINGS.get(letter, (letter,)):
+            for carrier in LETTER_CARRIERS:
+                audio = self.synthesize(carrier.format(spelling), profile, steady=True)
+                clip = cut_after_pause(audio, self.sample_rate, quiet)
+                if clip and len(clip) / 2 / self.sample_rate <= MAX_LETTER_S:
+                    return clip
+        log.warning("Piper: no clean way to say the letter %s with this voice", letter)
+        return _trim(self.synthesize(letter_sound(letter), profile, steady=True))
 
     def _pause(self, seconds, cancel) -> None:
         self._write(self.silence(seconds), cancel)
@@ -199,6 +228,30 @@ def _scale(raw: bytes, volume: float) -> bytes:
     for i, v in enumerate(samples):
         samples[i] = max(-32768, min(32767, int(v * volume)))
     return samples.tobytes()
+
+
+def cut_after_pause(raw: bytes, rate: int, quiet: int = QUIET) -> Optional[bytes]:
+    """The part of ``raw`` after its longest pause (not counting the silence
+    at the end), with a short lead-in and the quiet tail cut. None if there
+    is no pause."""
+    from array import array
+
+    samples = array("h")
+    samples.frombytes(raw[:len(raw) // 2 * 2])
+    loud = [i for i, v in enumerate(samples) if abs(v) > quiet]
+    if not loud:
+        return None
+    min_gap, after = int(rate * MIN_GAP_S), int(rate * GAP_AFTER_S)
+    best = None  # (length, end of the pause)
+    for prev, nxt in zip(loud, loud[1:]):
+        gap = nxt - prev - 1
+        if gap >= min_gap and prev + 1 >= after and (best is None or gap > best[0]):
+            best = (gap, nxt)
+    if best is None:
+        return None
+    start = max(0, best[1] - int(rate * LEAD_IN_S))
+    end = min(len(samples), loud[-1] + int(rate * 0.018))
+    return samples[start:end].tobytes() if end > start else None
 
 
 def _trim(raw: bytes, threshold: int = 300) -> bytes:

@@ -61,7 +61,16 @@ def test_confusion_sets():
     assert confusable_with("d") == ["b", "d", "p"]
     assert confusable_with("n") == ["m", "n"]
     assert confusable_with("j") == ["a", "h", "j"]
-    assert confusable_with("o") == ["o"]
+    assert confusable_with("o") == ["o", "r"]  # British R ("ah") is heard as "oh"
+    assert confusable_with("w") == ["w"]
+
+
+def test_british_r_and_words_vosk_does_not_know():
+    assert parse_letters("ah", [("ah", 0.9)], 0.9)[0].letter == "r"
+    grammar = letter_grammar("child")
+    assert "ah" in grammar
+    for word in ("aitch", "haitch", "backspace", "x-ray", "xray"):
+        assert word not in grammar
 
 
 def test_grammar_has_letters_commands_and_phonetic_words():

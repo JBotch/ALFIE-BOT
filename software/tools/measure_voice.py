@@ -34,7 +34,6 @@ from alfiebot.config import load_config  # noqa: E402
 from alfiebot.speech import letter_compare as lc  # noqa: E402
 from alfiebot.speech.base import RecognitionResult  # noqa: E402
 from alfiebot.speech.factory import model_path  # noqa: E402
-from alfiebot.speech.text import letter_sound  # noqa: E402
 from alfiebot.speech.vosk_recognizer import parse_result  # noqa: E402
 from alfiebot.speech.wake_word import WAKE_PHRASES  # noqa: E402
 from alfiebot.spelling.letter_input import letter_grammar  # noqa: E402
@@ -68,8 +67,9 @@ def vosk_recogniser(path: Path):
 
 
 def piper_synth(model_file: Path, speed: float):
-    """Returns synth(text) -> 16 kHz audio. Letters are said by name."""
-    from alfiebot.speech.piper_tts import PiperTTS, _trim, resample
+    """Returns synth(text) -> 16 kHz audio. Letters are said by name, the
+    same way AlfieBot says them."""
+    from alfiebot.speech.piper_tts import PiperTTS, resample
     from alfiebot.speech.voice_profiles import DEFAULT_PROFILES
 
     # Nothing is played: a stand-in for the sound card.
@@ -79,10 +79,7 @@ def piper_synth(model_file: Path, speed: float):
 
     def synth(text: str) -> bytes:
         if text not in cache:
-            spoken = letter_sound(text) if len(text) == 1 else text
-            audio = tts.synthesize(spoken, profile)
-            if len(text) == 1:
-                audio = _trim(audio)
+            audio = tts.letter_audio(text, profile) if len(text) == 1 else tts.synthesize(text, profile)
             cache[text] = resample(audio, tts.sample_rate / lc.RATE)
         return cache[text]
 

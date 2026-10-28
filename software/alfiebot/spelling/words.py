@@ -26,7 +26,7 @@ LETTER_NAMES = {
     "o": ["o", "oh"],
     "p": ["p", "pee"],
     "q": ["q", "queue", "cue"],
-    "r": ["r", "ar", "are"],
+    "r": ["r", "ar", "are", "ah"],  # "ah": how R sounds in British English
     "s": ["s", "es", "ess"],
     "t": ["t", "tee", "tea"],
     "u": ["u", "you", "yu"],

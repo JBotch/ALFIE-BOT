@@ -25,7 +25,7 @@ from typing import List, Optional, Sequence, Tuple, Union
 from alfiebot.spelling.words import FILLER, LETTER_NAMES, NAME_TO_LETTER
 
 # Letters that sound alike, so a shaky one gets a choice rather than a yes/no.
-CONFUSION_SETS = ("bdp", "cgt", "mn", "fs", "ahj")
+CONFUSION_SETS = ("bdp", "cgt", "mn", "fs", "ahj", "or")
 
 # "B for ball": child-friendly words, and the NATO alphabet for grown-ups.
 CHILD_WORDS = {
@@ -44,6 +44,9 @@ NATO_WORDS = {
 PHONETIC_TO_LETTER = {word: letter for words in (CHILD_WORDS, NATO_WORDS)
                       for letter, word in words.items()}
 PHONETIC_TO_LETTER.update({"alfa": "a", "juliett": "j", "whisky": "w"})
+# Words the small Vosk model doesn't know: in its grammar they only cause
+# warnings ("aitch" is heard as "h" anyway).
+NOT_IN_VOSK = {"aitch", "haitch", "backspace", "x-ray", "xray"}
 
 # Spoken commands while spelling, as word sequences (matched longest first).
 COMMANDS = {
@@ -96,8 +99,8 @@ def letter_grammar(phonetic: str = "child") -> List[str]:
     if phonetic in ("nato", "both"):
         words |= set(NATO_WORDS.values())
     # Vosk spells these with apostrophes and a hyphen.
-    words |= {"don't", "that's", "i'm", "x-ray"}
-    return sorted(words)
+    words |= {"don't", "that's", "i'm"}
+    return sorted(words - NOT_IN_VOSK)
 
 
 # ---- parsing --------------------------------------------------------------

@@ -24,10 +24,35 @@ architecture and the development plan.
 > machine). The OpenAI connection was tested with a stand-in OpenAI server
 only; the real OpenAI service has not been called. The wake word and
 > `tools/measure_voice.py` were tested with a stand-in recogniser and voice
-> only; they still need to be run with the real speech model and Piper.
+> only at first; version 0.13 has since been measured on Windows with the
+> real speech model and the Cori Piper voice (see 0.13.1 below).
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested, and the face's frame rate on the Pi
 > hasn't been measured.
+
+## Version 0.13.1: letters said clearly
+
+Measuring 0.13 on Windows with the real speech model and the Cori voice
+showed that the voice says some letters wrongly when it says them on their
+own: A came out as "eye", and F, L, M, N, S, X and Z rambled on for one to
+four seconds. That affected AlfieBot spelling words out to the child, not
+only the measurement. Now:
+
+- **Each letter is said after "Letter,"** with the voice's randomness off,
+  and only the part after the pause is kept, so you hear just the letter.
+  In a test on the laptop, 23 of 26 letters came out clean this way
+  (before: F, M, S, X and Z never did). If a letter has no clean pause, the
+  next carrier ("Letter... X.") or another spelling ("Vee", "Eff") is
+  tried, then the old way.
+- **British R:** "ah" now counts as R, and R and O are a "sounds alike"
+  pair, so AlfieBot asks "R for rabbit or O for orange?" when unsure.
+- Words the small speech model doesn't know (aitch, x-ray, backspace) are
+  left out of the spelling grammar. They were ignored anyway and filled
+  the console with warnings.
+- The Letter test has an **O/R** set.
+
+What the measurement found, and what's still open, is in
+`docs/voice_measurement_2026-10-28_laptop.md`.
 
 ## What version 0.13 adds: voice integration
 
