@@ -4,10 +4,10 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.11: hybrid router** (V1 Phase 4: chooses between the local
-AI, an optional cloud AI and the pretend AI, with a privacy gate that keeps
-a child's words on this computer, Python answers for maths, time and date,
-and a daily cloud budget). The cloud is off by default.
+**Version 0.12: adaptive spelling** (V1 Phase 5: spelling progress in a
+local database, a teaching ladder that asks before it tells, spaced review
+of tricky words, and a parent view of every change AlfieBot makes by
+itself). Version 0.11 added the hybrid router; the cloud is off by default.
 The V1 plan is in [docs/](docs/): the audit of the existing software, the
 architecture and the development plan.
 
@@ -26,6 +26,57 @@ only; the real OpenAI service has not been called.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested, and the face's frame rate on the Pi
 > hasn't been measured.
+
+## What version 0.12 adds: adaptive spelling
+
+Python is still the examiner: it marks every answer, with or without any
+AI, and the robot's screen still shows only the face.
+
+- **Practice asks before it tells.** AlfieBot says the word and asks Alfie
+  to spell it. The spelling isn't said first any more. Then, for each word:
+  1. Letters AlfieBot wasn't sure of are checked ("B for ball or D for
+     dog?"), never marked wrong.
+  2. First mistake: encouragement ("You got the start right!") and another
+     go.
+  3. Second mistake, or "clue": a clue that doesn't give the spelling
+     away (how many letters, the beats "be... cause", then the first and
+     last letter).
+  4. Third mistake, "I don't know", or still stuck after both clues:
+     AlfieBot **teaches** it: the beats, the tricky part ("watch out for
+     the A-U"), a memory trick ("Big Elephants Can Always Understand Small
+     Elephants"), the spelling, and then Alfie tries straight away.
+  5. A taught word comes back at the end of the session and again the
+     next day.
+- **Tests don't give the answer away.** After a wrong answer AlfieBot says
+  "We'll practise it later" (a parent can change this with
+  `learning.reveal_after_test_mistake`).
+- **Spaced review.** Every word is in one of 5 boxes. Right first time with
+  no help moves it up a box; right after help keeps it where it is; taught,
+  wrong in a test or skipped puts it back in box 1. Box 1 comes back the
+  next day, then 2, 4, 7 and 14 days. Practice starts with words that are
+  due, then this week's new words, then the rest of this week's list,
+  plus a couple of learned words for confidence (at most 10).
+- **Tricky words.** A word that's wrong or taught in two different sessions
+  is marked "tricky", and AlfieBot gives its first clue sooner.
+- **Every answer is saved** in `data/alfiebot.db` with what happened:
+  correct, incorrect, unclear (a hearing problem, never a mistake), help
+  asked, taught or skipped, plus clues used and how sure the recogniser
+  was.
+- **Spelling homework panel, new tabs:**
+  - **Progress:** each word's box, next review, right, wrong, help and
+    unclear counts, "tricky" words, recent sessions, and a Reset per word.
+  - **Changes:** everything AlfieBot changed by itself and why (box moves,
+    earlier clues), each with **Undo**; **Export CSV** (saved in
+    `data/exports`); **Reset all learning** (two clicks, the lists are
+    kept).
+- **Your existing lists and progress are copied in** the first time
+  v0.12 starts. `data/spellings` and `data/progress.json` are left as they
+  were, as a backup.
+- A word in a list can have its own beats, tip and sentence (in a list
+  file: `"extras": {"island": {"syllables": "is-land", "tip": "An island
+  is land in the sea."}}`). Otherwise AlfieBot works them out itself.
+- New settings: a `learning` section (`review_days`, `max_session_words`,
+  `confidence_words`, `reveal_after_test_mistake`).
 
 ## What version 0.11 adds: the hybrid router
 
@@ -633,6 +684,23 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Reset all data | Click twice to delete the `data/` folder (spelling lists and progress) and clear the transcript and AI statistics |
 | Face-only mode | 1-9, 0, D, Space, Esc | Expressions, follow state, demo of all 16, button, quit |
 
+## What to test in version 0.12
+
+1. Start the simulator. Open **Spelling homework**: your lists are still
+   there, and **Progress** shows your earlier results (copied in once).
+2. Press **Practise**. AlfieBot says the first word and asks you to spell
+   it, without spelling it first.
+3. Spell it wrong once (you get encouragement), then again (a clue with
+   no letters), then a third time: AlfieBot teaches it and asks you to try
+   straight away. That word comes back at the end.
+4. Say "clue" and "I don't know" on another word.
+5. Say some letters with the microphone and check an unclear letter is
+   asked about, not marked wrong.
+6. Do a test and get one wrong: AlfieBot doesn't say the spelling.
+7. Look at **Progress** (boxes, next review) and **Changes** (reasons).
+   Try **Undo** on one change, and **Export CSV**.
+8. Close the simulator and start it again: everything is still there.
+
 ## What to test in version 0.11
 
 1. Type "what is 7 times 8", "twelve take away five", "what's 17 divided
@@ -877,9 +945,14 @@ software/
                            local_provider.py (Ollama), cloud_provider.py (OpenAI, off by default),
                            router.py (privacy gate; which provider answers, and why), connectivity.py,
                            performance.py (latency, tokens, errors per provider and machine)
+    learning/              store.py (lists, progress, sessions, attempts, adaptations in SQLite;
+                           undo, reset, CSV export, one-off JSON import), schedule.py (5 review
+                           boxes), teaching.py (beats, clues that don't give the spelling away,
+                           the teaching step)
     spelling/              words.py (letters, spoken letter names), letter_input.py (spoken
                            spelling: letters, commands, unsure letters), lists.py (weekly lists),
-                           progress.py, tutor.py (add / learn / test), responses.json
+                           progress.py (the old JSON files, now only imported once),
+                           tutor.py (add / practise with the teaching ladder / test), responses.json
     hardware/              simulator vs Raspberry Pi (button), auto-detected
     storage/               local JSON files (atomic writes, delete all), database.py (SQLite
                            AI statistics, with migrations)
@@ -911,6 +984,9 @@ that implements the interface in `speech/base.py`.
   records it. Speech recognition and AlfieBot's voice (Piper, Windows or
   espeak-ng) run on the computer, not online. The only downloads are the
   speech model and voices, once, when you run the download tools.
-- The transcript is kept in memory only. Spelling lists and progress are
-  saved as JSON in `data/` on this computer only, and **Reset all data**
-  removes them.
+- The transcript is kept in memory only. Spelling lists, progress and the
+  adaptations log are saved in `data/alfiebot.db` on this computer only
+  (the older JSON files stay in `data/` as a backup). They are never sent
+  to any AI, local or cloud. **Reset all learning** deletes the progress,
+  **Export CSV** gives a parent a copy, and **Reset all data** removes
+  everything.

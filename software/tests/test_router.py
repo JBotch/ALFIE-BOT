@@ -21,10 +21,9 @@ from alfiebot.conversation.engine import ConversationEngine
 from alfiebot.core.brain import Brain, PendingReply
 from alfiebot.core.events import UserInput
 from alfiebot.core.tools import answer
-from alfiebot.spelling.lists import SpellingLists
-from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.storage.json_store import JsonStore
+from tests.learning_helpers import make_tutor
 from tests.fake_openai import FakeOpenAI
 
 KEY = "sk-test-not-a-real-key-123"
@@ -53,8 +52,7 @@ def make_brain(local, cloud, mode="automatic", enabled=True, review=True, timeou
     config = load_config()
     config["ai"].update(mode=mode, timeout_s=timeout)
     config["cloud"].update(enabled=enabled, child_data_review_complete=review)
-    store = JsonStore(tempfile.mkdtemp(prefix="alfiebot-test-"))
-    tutor = SpellingTutor(SpellingLists(store), ProgressTracker(store), rng=random.Random(0))
+    tutor = make_tutor(rng=random.Random(0))
     return Brain(config, ConversationEngine("AlfieBot", rng=random.Random(0)), tutor, local, cloud,
                  performance=PerformanceTracker("Test PC"))
 

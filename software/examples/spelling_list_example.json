@@ -12,5 +12,13 @@
     "different",
     "favourite",
     "minute"
-  ]
+  ],
+  "extras": {
+    "because": {
+      "sentence": "I wore my coat because it was raining."
+    },
+    "minute": {
+      "sentence": "Wait a minute, please."
+    }
+  }
 }

@@ -66,17 +66,16 @@ Added at Jordan's request before the next AI phase, from the "OLED Face Design &
 
 The real OpenAI API is only called by an adult with their own key, with synthetic prompts, and only after Jordan agrees.
 
-## Phase 5: Learning engine (v0.12)
+## Phase 5: Learning engine (v0.12, done)
 
-- [ ] SQLite learning schema; one-off import of `data/spellings/*.json` and `data/progress.json` (JSON kept as backup)
-- [ ] `learning/spelling.py` examiner with explicit outcomes (correct, incorrect, unclear, help requested, taught), reusing `spelling/letter_input.py`
-- [ ] `learning/teaching.py` ladder: ask, clarify, retry, clue, teach (syllables, tricky part, memory tip, spell together), retest later
-- [ ] Practice no longer reveals the spelling before the child tries
-- [ ] `learning/adaptive.py`: Leitner schedule, repeated-difficulty flags, adaptations log with undo
-- [ ] Optional AI tutor phrasing for encouragement and tips, with the "no spelling leak" check; works fully without AI
-- [ ] Learning panel; parent review, delete, reset and CSV export
-- [ ] Tests: every testing bullet in brief section 11, including restart persistence and switching provider mid-activity
-- **Demo:** a voice-only spelling session where AlfieBot clarifies an unclear letter, gives a clue, teaches a word, and the next day's session brings the tricky words back.
+- [x] SQLite learning schema (migration 2: `word_lists`, `words`, `word_progress`, `sessions`, `attempts`, `adaptations`, `preferences`); one-off import of `data/spellings/*.json` and `data/progress.json` (JSON kept as backup)
+- [x] Examiner with explicit outcomes (correct, incorrect, unclear, help_requested, taught, skipped), reusing `spelling/letter_input.py`; each attempt saves clues used, clarifications and the lowest recogniser confidence. The examiner stays in `spelling/tutor.py`; the records are in `learning/store.py`
+- [x] `learning/teaching.py` ladder: ask, clarify, retry with encouragement, clue (letters and beats, then first and last letter), teach (beats, tricky part, memory tip, spelling), try straight away, retest at the end of the session and the next day
+- [x] Practice no longer reveals the spelling before the child tries; tests don't reveal it after a mistake (`learning.reveal_after_test_mistake`, default false)
+- [x] `learning/schedule.py`: 5-box Leitner schedule (1, 2, 4, 7, 14 days); practice order due → new → this week → 2 learned words; repeated-difficulty flag gives an earlier clue; adaptations log with reasons and undo
+- [x] Learning view as two new tabs in the Spelling homework panel (Progress, Changes): boxes, next review, counts, tricky words, sessions with outcomes, undo, reset one word, reset all learning, CSV export; words hidden during a test
+- [x] Tests: correct, incorrect, ambiguous letters, recognition failure, help requested, repeated wrong answers, success after hints, teaching, restart persistence, JSON import, switching AI provider mid-activity, the schedule, adaptation undo, clue leak check
+- Not done: optional AI phrasing for encouragement and tips. `teaching.leaks_spelling` (the "no spelling leak" check) is ready for it; everything works without AI. Approved learning preferences have a table but no panel yet.
 
 ## Phase 6: Voice integration (v0.13)
 

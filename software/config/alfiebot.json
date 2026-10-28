@@ -66,6 +66,13 @@
     "phonetic_words": "child",
     "finish_after_pause": 5.0
   },
+  "learning": {
+    "_comment": "Spelling practice and review. review_days: how many days a word waits in each of the 5 review boxes (right first time with no help moves a word up a box; taught, wrong in a test or skipped moves it back to box 1). max_session_words: the most words in one practice. confidence_words: words already learned that are added to a practice for confidence. reveal_after_test_mistake: false = after a wrong test answer AlfieBot doesn't say the spelling, and the word goes into practice instead.",
+    "review_days": [1, 2, 4, 7, 14],
+    "max_session_words": 10,
+    "confidence_words": 2,
+    "reveal_after_test_mistake": false
+  },
   "ai": {
     "_comment": "The AI brain. enabled: false uses only the hand-written replies. local_provider: ollama (a real AI model on this computer, see ollama.com) or mock (a pretend AI, for testing). If Ollama isn't running or the model isn't installed, the pretend AI answers instead and the AI brain panel says why. local_model: the Ollama model, e.g. qwen3:1.7b (best answers in the laptop benchmark), qwen3:0.6b (fastest) or gemma3:1b (install with: ollama pull qwen3:1.7b). AlfieBot never downloads models itself. mode: local_only, cloud_only or automatic. The cloud settings are in the cloud section. timeout_s: how long AlfieBot waits for an AI answer before giving a hand-written reply. max_tokens: the longest AI answer. mock_delay_s: makes the pretend AI take this long, to see the thinking face.",
     "enabled": true,

@@ -1,5 +1,5 @@
 {
-  "_comment": "What AlfieBot says in the spelling tutor. Several options per line; one is picked at random. Placeholders: {word}, {Word} (capital first letter), {letters} (B-E-C-A-U-S-E), {slow_letters}, {n}, {total}, {count}, {score}, {first}, {length}, {pattern}, {answer}, {missed}, {answer}/{so_far} (the child's letters), {removed}, {n} (letter number), {options}, {option}, {example}, {heard}.",
+  "_comment": "What AlfieBot says in the spelling tutor. Several options per line; one is picked at random. Placeholders: {word}, {Word} (capital first letter), {letters} (B-E-C-A-U-S-E), {slow_letters}, {n}, {total}, {sentence}, {beats}, {count}, {score}, {first}, {length}, {answer}, {missed}, {answer}/{so_far} (the child's letters), {removed}, {n} (letter number), {options}, {option}, {example}, {heard}.",
   "menu_question": [
     "Would you like to add this week's spellings, practise them or take a test?",
     "Shall we add spellings, practise them or do a test?"
@@ -47,41 +47,21 @@
     "Is that right? Yes or no?"
   ],
   "practice_intro": [
-    "Let's practise! There are {total} words. Spell each one a letter at a time, then say finished.",
-    "Practice time! We've got {total} words. Say the letters one by one, then say finished."
+    "Let's practise! There are {total} words. Spell each one a letter at a time, then say finished. Say clue if you'd like a clue.",
+    "Practice time! We've got {total} words. Say the letters one by one, then say finished. If you get stuck, say clue."
   ],
   "practice_word": [
-    "Word {n} of {total} is {word}. {Word} is spelled {letters}. Now you try! Spell {word}.",
-    "Here's word {n} of {total}: {word}. It's spelled {letters}. Your turn! Spell {word}."
+    "Word {n} of {total} is {word}. {sentence}Can you spell {word}?",
+    "Here's word {n} of {total}: {word}. {sentence}Your turn! Spell {word}."
   ],
   "practice_slow": [
     "Okay, nice and slowly. {Word}. {slow_letters} Now you try!"
-  ],
-  "clue_1": [
-    "Here's a clue. {Word} starts with {first} and has {length} letters.",
-    "Clue time! It begins with {first}, and it has {length} letters."
-  ],
-  "clue_2": [
-    "Another clue! It goes {pattern}.",
-    "Here's a bigger clue: {pattern}."
-  ],
-  "clue_3": [
-    "Last clue: {word} is spelled {letters}. Have a go!"
   ],
   "practice_correct": [
     "Brilliant! That's exactly right!",
     "Yes! You spelled {word} perfectly!",
     "Fantastic spelling!",
     "Spot on! Well done!"
-  ],
-  "practice_wrong": [
-    "Nearly! You spelled {answer}. {Word} is spelled {letters}. Have another go!",
-    "Good try! Let's look again: {word} is {letters}. Try once more!",
-    "So close! It's {letters}. You can do it, try again!"
-  ],
-  "practice_give_up": [
-    "That one's tricky! It's {letters}. We'll practise {word} again another time.",
-    "Tricky word! {Word} is {letters}. Let's come back to it later."
   ],
   "practice_done": [
     "That's all {total} words! You got {score} right first time. Would you like to take a test now?",
@@ -105,11 +85,11 @@
     "Brilliant, that's correct!"
   ],
   "test_wrong": [
-    "Good try! {Word} is spelled {letters}.",
-    "Not quite, but well done for trying. It's {letters}."
+    "Good try! We'll practise {word} together later.",
+    "Not quite, but well done for trying. We'll practise {word} later."
   ],
   "test_skip": [
-    "No problem. {Word} is spelled {letters}. We'll practise it later."
+    "No problem. We'll practise {word} later."
   ],
   "test_done_all": [
     "You got all {total} right! Amazing spelling!",
@@ -196,5 +176,38 @@
   "clarify_again": [
     "Sorry, I still didn't catch letter {n}. Can you say it like {example}?",
     "Hmm, I'm not sure about letter {n}. Try saying it like {example}."
+  ],
+  "practice_retest": [
+    "Let's try {word} again, now you've learned it. Can you spell {word}?",
+    "Remember {word}? Let's see if you can spell it now."
+  ],
+  "practice_slow_beats": [
+    "Okay, nice and slowly. {beats}. {Word}. Now you try!"
+  ],
+  "wrong_lead": [
+    "Good try!",
+    "Nearly!",
+    "Not quite, but great effort!",
+    "Ooh, close!"
+  ],
+  "try_again": [
+    "Have another go at {word}.",
+    "Try {word} once more.",
+    "Have another go!"
+  ],
+  "practice_taught_correct": [
+    "Yes! You learned {word}! We'll practise it again soon.",
+    "Brilliant, you remembered it! {Word} is getting easier."
+  ],
+  "practice_taught_wrong": [
+    "Good try! {Word} is a tricky one. We'll come back to it in a little while.",
+    "Well done for trying. We'll have another go at {word} soon."
+  ],
+  "test_wrong_reveal": [
+    "Good try! {Word} is spelled {letters}.",
+    "Not quite, but well done for trying. It's {letters}."
+  ],
+  "test_skip_reveal": [
+    "No problem. {Word} is spelled {letters}. We'll practise it later."
   ]
 }

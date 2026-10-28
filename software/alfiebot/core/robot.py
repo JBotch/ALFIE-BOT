@@ -37,8 +37,7 @@ from alfiebot.core.states import TALKING_STATES, Expression, RobotState, express
 from alfiebot.core.transcript import Transcript
 from alfiebot.hardware.base import Platform
 from alfiebot.speech.mic_gate import MicGate
-from alfiebot.spelling.lists import SpellingLists
-from alfiebot.spelling.progress import ProgressTracker
+from alfiebot.learning.store import LearningProgress, WordLists, import_json
 from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.spelling.letter_input import heard_letters, letter_grammar
 from alfiebot.speech.base import TextToSpeech
@@ -93,14 +92,22 @@ class AlfieBot:
         self.transcript = Transcript()
         self.mic_gate = MicGate()
         self.store = JsonStore(config["data_dir"])
-        self.spelling_lists = SpellingLists(self.store)
-        self.progress = ProgressTracker(self.store)
+        self.db = Database(config["data_dir"])
+        learning = config.get("learning", {})
+        self.spelling_lists = WordLists(self.db)
+        self.progress = LearningProgress(self.db, learning.get("review_days", (1, 2, 4, 7, 14)),
+                                         learning.get("max_session_words", 10), learning.get("confidence_words", 2))
+        try:
+            import_json(self.store, self.spelling_lists, self.progress)
+        except Exception:  # never stop AlfieBot starting; the JSON files are still there
+            log.exception("Couldn't copy the old spelling files into the database")
         spelling = config.get("spelling", {})
         self.tutor = SpellingTutor(self.spelling_lists, self.progress,
                                    min_confidence=speech.get("min_confidence", 0.75),
                                    confirm_spoken=spelling.get("confirm_spoken_answers", "always"),
-                                   phonetic=spelling.get("phonetic_words", "child"))
-        self.brain = brain or Brain(config, self.conversation, self.tutor, db=Database(config["data_dir"]))
+                                   phonetic=spelling.get("phonetic_words", "child"),
+                                   reveal_after_test_mistake=bool(learning.get("reveal_after_test_mistake", False)))
+        self.brain = brain or Brain(config, self.conversation, self.tutor, db=self.db)
         self._pending: Optional[PendingReply] = None
         # Developer panel: voice output off shows replies in the transcript only.
         self.voice_output = True

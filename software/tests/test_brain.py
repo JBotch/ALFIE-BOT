@@ -7,6 +7,8 @@ import time
 
 import pytest
 
+from tests.learning_helpers import make_tutor
+
 from alfiebot.ai.connectivity import Connectivity
 from alfiebot.ai.mock_provider import MockProvider
 from alfiebot.ai.performance import PerformanceTracker
@@ -20,8 +22,7 @@ from alfiebot.core.events import UserInput
 from alfiebot.core.robot import AlfieBot
 from alfiebot.core.states import Expression, RobotState
 from alfiebot.hardware.simulator import create_simulator_platform
-from alfiebot.spelling.lists import SpellingLists, week_id
-from alfiebot.spelling.progress import ProgressTracker
+from alfiebot.spelling.lists import week_id
 from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.storage.json_store import JsonStore
 
@@ -32,8 +33,7 @@ def make_brain(mode="local_only", cloud_enabled=False, timeout=8.0):
     config = load_config()
     config["ai"].update(mode=mode, timeout_s=timeout)
     config["cloud"]["enabled"] = cloud_enabled
-    store = JsonStore(tempfile.mkdtemp(prefix="alfiebot-test-"))
-    tutor = SpellingTutor(SpellingLists(store), ProgressTracker(store), rng=random.Random(0))
+    tutor = make_tutor(rng=random.Random(0))
     local = MockProvider("mock-local", "local", rng=random.Random(0))
     cloud = MockProvider("mock-cloud", "cloud", "mock-cloud-1", rng=random.Random(0))
     brain = Brain(config, ConversationEngine("AlfieBot", rng=random.Random(0)), tutor, local, cloud)

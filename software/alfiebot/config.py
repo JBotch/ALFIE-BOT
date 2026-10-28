@@ -59,6 +59,12 @@ DEFAULTS = {
         "phonetic_words": "child",
         "finish_after_pause": 5.0,
     },
+    "learning": {
+        "review_days": [1, 2, 4, 7, 14],
+        "max_session_words": 10,
+        "confidence_words": 2,
+        "reveal_after_test_mistake": False,
+    },
     "voice_profiles": {},
     "sounds": {"bubbly": True, "classic": False, "wake": True, "listen": True, "celebrate": True,
                "volume": 0.5},

@@ -3,11 +3,20 @@
 The robot passes text here while a spelling activity is running and says
 whatever ``Reply`` comes back (``None`` means "say nothing, keep listening").
 
+Python is the examiner: this class decides every mark, never an AI.
 Typed answers are marked straight away. Spoken answers are built up letter
 by letter (see ``letter_input``): the child spells, can say "delete" or
 "start again", and says "finished". Any letter the recogniser wasn't sure
 of is asked about, and the whole spelling is read back for a yes before it
 is marked, so a child is never marked wrong because of a mishearing.
+
+Practice is a teaching ladder for each word: ask (the spelling is not
+said first), clarify unclear letters, encourage and try again, a clue that
+doesn't give the spelling away, then teach it (beats, the tricky part, a
+memory tip, the spelling) and try straight away. A taught word comes back
+at the end of the session and at the next one. Every answer is saved with
+its outcome (correct, incorrect, unclear, help_requested, taught, skipped)
+and words move between review boxes (``learning/schedule.py``).
 """
 
 import json
@@ -20,16 +29,18 @@ from typing import Dict, List, Optional
 from alfiebot.conversation.engine import Reply
 from alfiebot.conversation.intents import NO, YES, normalise
 from alfiebot.core.states import Expression
+from alfiebot.learning import schedule, teaching
+from alfiebot.learning.store import HELP_REQUESTED, SKIPPED, TAUGHT, UNCLEAR
 from alfiebot.spelling.letter_input import (CHILD_WORDS, NATO_WORDS, Command, Letter, LetterSequence,
                                            Unknown, confusable_with, parse_letters)
-from alfiebot.spelling.lists import SpellingLists, week_id
-from alfiebot.spelling.progress import ProgressTracker
+from alfiebot.spelling.lists import week_id
 from alfiebot.spelling.words import clean_word, parse_spelled_answer, spell_out
 
 log = logging.getLogger(__name__)
 
 RESPONSES_PATH = Path(__file__).resolve().parent / "responses.json"
-PRACTICE_TRIES = 3  # wrong answers before moving on in learning mode
+TEACH_AFTER = 3  # genuine mistakes before AlfieBot teaches the word
+MAX_CLUES = 2
 
 # Ends adding words, or the menu (spelling answers have their own commands).
 CMD_STOP = re.compile(r"^(stop|finish|finished|end|quit|im done|i am done|thats enough|"
@@ -55,11 +66,15 @@ def load_responses(path=RESPONSES_PATH) -> dict:
 
 
 class SpellingTutor:
-    def __init__(self, lists: SpellingLists, progress: ProgressTracker,
-                 rng: random.Random = None, responses: dict = None,
+    def __init__(self, lists, progress, rng: random.Random = None, responses: dict = None,
                  min_confidence: float = 0.75, confirm_spoken: str = "always",
-                 phonetic: str = "child"):
+                 phonetic: str = "child", reveal_after_test_mistake: bool = False,
+                 recognition_mode: str = "continuous"):
+        """``lists`` and ``progress`` are ``learning.store.WordLists`` and
+        ``LearningProgress`` (SQLite)."""
         self.min_confidence = min_confidence
+        self.reveal_after_test_mistake = reveal_after_test_mistake
+        self.recognition_mode = recognition_mode
         self.confirm_spoken = confirm_spoken  # "always" or "when_unsure"
         self.phonetic = phonetic  # "child" (B for ball), "nato" (B for bravo) or "off"
         self.lists = lists
@@ -77,12 +92,19 @@ class SpellingTutor:
         self.week: Optional[str] = None
         self.index = 0
         self.results: Dict[str, bool] = {}
-        self._tries = 0
-        self._clue = 0
+        self.session_id: Optional[int] = None
+        self._planned = 0  # words before any taught ones were added back
+        self._requeued: set = set()
+        self._reset_word()
         self._pending_word: Optional[str] = None
         self._reset_answer()
         self._added: List[str] = []
         self._missed: List[str] = []
+
+    def _reset_word(self) -> None:
+        self._mistakes = 0
+        self._hint = 0  # clues given for this word
+        self._taught = False
 
     # ---- status for the panel -------------------------------------------
     @property
@@ -172,11 +194,16 @@ class SpellingTutor:
             words = list(self.lists.load(week).words)
             if mode == "test":
                 self.rng.shuffle(words)
+            else:
+                words = self.progress.plan_practice(words)
         self.mode = mode
         self.week = week
         self.words = words
+        self._planned = len(words)
+        self._requeued = set()
         self.index = 0
         self.results = {}
+        self.session_id = self.progress.start_session(mode, week or self.active_week, self.recognition_mode)
         intro = self._pick(f"{mode}_intro", total=len(words))
         if mode == "practice":
             return self._say_text(intro + " " + self._practice_prompt(), mood=Expression.HAPPY)
@@ -260,6 +287,7 @@ class SpellingTutor:
         self._stage = "spelling"
         self._clarify_index: Optional[int] = None
         self._clarify_options: List[str] = []
+        self._clarifications = 0
 
     @property
     def collecting_letters(self) -> bool:
@@ -313,6 +341,7 @@ class SpellingTutor:
         if note:
             return self._say("cleared", mood=Expression.LISTENING, word=word)
         if unknown and not has_letters:
+            self._record(UNCLEAR)  # a hearing problem, never a mistake
             return self._say("letters_please", mood=Expression.CONFUSED, heard=" ".join(unknown))
         return None
 
@@ -343,8 +372,10 @@ class SpellingTutor:
 
     def _mark_answer(self) -> Reply:
         letters = self.answer.text
+        heard = {"source": "voice", "clarifications": self._clarifications,
+                 "min_confidence": min((h.confidence for h in self.answer.letters), default=None)}
         self._reset_answer()
-        return self._judge(letters)
+        return self._judge(letters, heard)
 
     # ---- unsure letters ------------------------------------------------------
     def _phonetic(self, letter: str) -> str:
@@ -358,6 +389,7 @@ class SpellingTutor:
         alike, never from the word being tested."""
         self._stage = "clarify"
         self._clarify_index = index
+        self._clarifications += 1
         heard = self.answer.letters[index]
         n = index + 1
         if heard.letter == "?":
@@ -449,7 +481,9 @@ class SpellingTutor:
         if name == "finish":
             return self._answer_finished()
         if name == "slower" and practice:
-            return self._say("practice_slow", word=word)
+            if self._taught:
+                return self._say("practice_slow", word=word)
+            return self._say("practice_slow_beats", word=word, beats=self._help(word).beats)
         if name in ("repeat", "slower"):
             lead = self._pick("repeat_word", word=word)
             if self.answer.letters:
@@ -459,52 +493,111 @@ class SpellingTutor:
             return self._say_text(self._so_far(), mood=Expression.LISTENING)
         if name == "next" or (name == "dont_know" and not practice):
             self._reset_answer()
+            self._record(SKIPPED)
+            self.results.setdefault(word, False)
+            self._finish_word(word, schedule.SKIPPED)
             if practice:
-                self.results.setdefault(word, False)
                 return self._next_practice_word("")
-            self.progress.record_attempt(word, False, "test", "")
             self.results[word] = False
-            return self._next_test_word(self._pick("test_skip", word=word))
+            key = "test_skip_reveal" if self.reveal_after_test_mistake else "test_skip"
+            return self._next_test_word(self._pick(key, word=word))
         if name in ("clue", "dont_know"):
             if not practice:
                 return self._say("test_no_clue", mood=Expression.LISTENING)
-            self._clue = min(self._clue + 1, 3)
-            pattern = "-".join(c.upper() if i < max(1, len(word) // 2) else "_"
-                               for i, c in enumerate(word))
-            return self._say(f"clue_{self._clue}", word=word, first=word[0].upper(),
-                             length=len(word), pattern=pattern)
+            self._reset_answer()
+            self._record(HELP_REQUESTED)
+            self.results.setdefault(word, False)  # not right first time
+            if self._taught:
+                return self._say("practice_slow", word=word)
+            if name == "dont_know" or self._hint >= MAX_CLUES:
+                return self._teach(word)
+            return self._say_text(self._next_clue(word) + " " + self._pick("try_again", word=word),
+                                  mood=Expression.LISTENING)
         return None
 
-    def _judge(self, letters: str) -> Reply:
-        if self.mode == "practice":
-            return self._practice_answer(letters)
-        return self._test_answer(letters)
-
-    # ---- learning mode ----------------------------------------------------
-    def _practice_prompt(self) -> str:
-        word = self.words[self.index]
-        self._tries = 0
-        self._clue = 0
-        return self._pick("practice_word", word=word, n=self.index + 1, total=len(self.words))
-
-    def _practice_answer(self, letters: str) -> Reply:
+    def _judge(self, letters: str, heard: dict = None) -> Reply:
         word = self.words[self.index]
         correct = letters == word
-        self._tries += 1
-        self.progress.record_attempt(word, correct, "practice", letters)
+        heard = heard or {"source": "typed"}
+        self.progress.record_attempt(word, correct, self.mode, letters, hints=self._hint + int(self._taught),
+                                     session_id=self.session_id, **heard)
+        if self.mode == "practice":
+            return self._practice_answer(word, letters, correct)
+        return self._test_answer(word, correct)
+
+    def _record(self, outcome: str) -> None:
+        """Save something that isn't a marked answer (unclear, help, taught, skipped)."""
+        word = self.current_word
+        if word:
+            self.progress.record_attempt(word, mode=self.mode, outcome=outcome,
+                                         hints=self._hint + int(self._taught), session_id=self.session_id)
+
+    def _finish_word(self, word: str, result: str) -> None:
+        """Move the word between review boxes, except when it comes back for
+        a retest later in the same session (so it is still due next time)."""
+        if self.index < self._planned:
+            self.progress.finish_word(word, result, self.session_id)
+
+    def _help(self, word: str) -> teaching.WordHelp:
+        info = self.lists.word_info(word) if hasattr(self.lists, "word_info") else {}
+        return teaching.word_help(word, info.get("syllables", ""), info.get("tip", ""), info.get("sentence", ""))
+
+    def _next_clue(self, word: str) -> str:
+        self._hint = min(self._hint + 1, MAX_CLUES)
+        return teaching.clue(self._help(word), self._hint)
+
+    def _teach(self, word: str) -> Reply:
+        self._taught = True
+        self._record(TAUGHT)
+        self._requeue(word)
+        return self._say_text(teaching.teach(self._help(word)), mood=Expression.HAPPY)
+
+    def _requeue(self, word: str) -> None:
+        """A taught word comes back once at the end of the session."""
+        if word not in self._requeued and self.index < self._planned:
+            self._requeued.add(word)
+            self.words.append(word)
+
+    # ---- learning mode: the teaching ladder ---------------------------------
+    def _practice_prompt(self) -> str:
+        word = self.words[self.index]
+        self._reset_word()
+        if self.index >= self._planned:
+            return self._pick("practice_retest", word=word)
+        sentence = self._help(word).sentence
+        return self._pick("practice_word", word=word, n=self.index + 1, total=self._planned,
+                          sentence=f"Here it is in a sentence: {sentence} " if sentence else "")
+
+    def _practice_answer(self, word: str, letters: str, correct: bool) -> Reply:
         self.results.setdefault(word, correct)  # first try counts for the summary
         if correct:
-            praise = self._pick("practice_correct", word=word)
-            return self._next_practice_word(praise, celebrate=True)
-        if self._tries >= PRACTICE_TRIES:
-            return self._next_practice_word(self._pick("practice_give_up", word=word))
-        return self._say("practice_wrong", word=word, answer=spell_out(letters))
+            if self._taught:
+                self._finish_word(word, schedule.TAUGHT)
+                return self._next_practice_word(self._pick("practice_taught_correct", word=word), celebrate=True)
+            first = self._mistakes == 0 and self._hint == 0
+            self._finish_word(word, schedule.FIRST_TRY if first else schedule.WITH_HELP)
+            return self._next_practice_word(self._pick("practice_correct", word=word), celebrate=True)
+        self._mistakes += 1
+        if self._taught:
+            self._finish_word(word, schedule.TAUGHT)
+            return self._next_practice_word(self._pick("practice_taught_wrong", word=word))
+        lead = self._pick("wrong_lead")
+        note = teaching.first_mistake_note(word, letters)
+        if note and self._mistakes == 1:
+            lead += " " + note
+        early = self._mistakes == 1 and self._hint == 0 and self.progress.word(word).get("early_clue")
+        if self._mistakes >= TEACH_AFTER or self._hint >= MAX_CLUES:
+            reply = self._teach(word)
+            return self._say_text(f"{lead} {reply.text}", mood=Expression.HAPPY)
+        if self._mistakes >= 2 or early:
+            lead += " " + self._next_clue(word)
+        return self._say_text(f"{lead} {self._pick('try_again', word=word)}", mood=Expression.LISTENING)
 
     def _next_practice_word(self, lead: str, celebrate: bool = False) -> Reply:
         self.index += 1
         if self.index >= len(self.words):
             score = sum(self.results.values())
-            total = len(self.words)
+            total = len(self.results)
             self._save_session()
             self.mode = "after_practice"
             done = self._pick("practice_done", total=total, score=score)
@@ -517,14 +610,16 @@ class SpellingTutor:
     # ---- test mode --------------------------------------------------------
     def _test_prompt(self) -> str:
         word = self.words[self.index]
+        self._reset_word()
         return self._pick("test_word", word=word, n=self.index + 1, total=len(self.words))
 
-    def _test_answer(self, letters: str) -> Reply:
-        word = self.words[self.index]
-        correct = letters == word
-        self.progress.record_attempt(word, correct, "test", letters)
+    def _test_answer(self, word: str, correct: bool) -> Reply:
         self.results[word] = correct
-        lead = self._pick("test_correct" if correct else "test_wrong", word=word)
+        self._finish_word(word, schedule.FIRST_TRY if correct else schedule.INCORRECT)
+        if correct:
+            lead = self._pick("test_correct", word=word)
+        else:
+            lead = self._pick("test_wrong_reveal" if self.reveal_after_test_mistake else "test_wrong", word=word)
         return self._next_test_word(lead, correct)
 
     def _next_test_word(self, lead: str, correct: bool = False) -> Reply:
@@ -570,8 +665,9 @@ class SpellingTutor:
 
     # ---- shared -------------------------------------------------------------
     def _save_session(self) -> None:
-        if self.mode in ("practice", "test") and self.results:
-            self.progress.record_session(self.mode, self.week or self.active_week, dict(self.results))
+        if self.mode in ("practice", "test") and self.session_id is not None:
+            self.progress.finish_session(self.session_id, dict(self.results))
+            self.session_id = None
 
     def _pick(self, key: str, **values) -> str:
         options = self.responses[key]

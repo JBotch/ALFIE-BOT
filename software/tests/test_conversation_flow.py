@@ -230,7 +230,8 @@ def test_spelling_practice_by_conversation():
     say(robot, "practise them")
     finish_talking(robot)
     assert robot.state == RobotState.SPELLING_PRACTICE
-    assert "B-E-C-A-U-S-E" in robot_lines(robot)[-1]
+    assert "spell because" in robot_lines(robot)[-1].lower()
+    assert "B-E-C-A-U-S-E" not in robot_lines(robot)[-1]  # asked, not told
     say(robot, "because")
     tick(robot, 0.6)
     assert robot.state == RobotState.CELEBRATING

@@ -24,11 +24,10 @@ from alfiebot.core.memory import ConversationMemory
 from alfiebot.core.personality import Personality, last_question
 from alfiebot.core.safety import check_input, check_output, mask_personal
 from alfiebot.core.states import Expression
-from alfiebot.spelling.lists import SpellingLists
-from alfiebot.spelling.progress import ProgressTracker
 from alfiebot.spelling.tutor import SpellingTutor
 from alfiebot.storage.database import Database
 from alfiebot.storage.json_store import JsonStore
+from tests.learning_helpers import make_tutor
 from tests.fake_ollama import FakeOllama
 
 UNKNOWN = "what is the capital of peru"
@@ -49,8 +48,7 @@ def ollama(fake, model="qwen3:0.6b"):
 def make_brain(local, data_dir=None, timeout=5.0):
     config = load_config()
     config["ai"].update(timeout_s=timeout)
-    store = JsonStore(data_dir or tempfile.mkdtemp(prefix="alfiebot-test-"))
-    tutor = SpellingTutor(SpellingLists(store), ProgressTracker(store), rng=random.Random(0))
+    tutor = make_tutor(data_dir, rng=random.Random(0))
     return Brain(config, ConversationEngine("AlfieBot", rng=random.Random(0)), tutor, local, None)
 
 
@@ -306,7 +304,7 @@ def test_database_migrations_are_idempotent(tmp_path):
     db = Database(tmp_path)
     db.migrate()
     db.migrate()
-    assert db.version == 1
+    assert db.version == 2
     columns = {r["name"] for r in db.query("PRAGMA table_info(ai_requests)")}
     assert "latency_s" in columns and not columns & {"text", "speech", "prompt", "content"}
 
