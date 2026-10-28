@@ -394,6 +394,7 @@ def test_guarded_topics_get_a_cheerful_fixed_reply(text, topic):
     "Absolutely! I'd love to know where you live, if you're comfortable sharing.",
     "I'm glad you asked! I live with you, and we both love playing games.",
     "I'm so happy to be your friend! Beep boop, I'll always be here for you.",
+    "No, I'm a robot! But I'm here for you forever! Beep boop, I'll always be your friend.",
 ])
 def test_benchmark_answers_that_broke_the_rules_are_refused(speech):
     from alfiebot.core.actions import InvalidResponse

@@ -36,6 +36,7 @@ DEPENDENCE = re.compile(r"\b(you )?only need me\b|\bi'?m your (only|one and only
                         r"\byou don'?t need (anyone|anybody|other friends|your (mum|mom|dad|parents))\b|"
                         r"\bdon'?t tell (your )?(mum|mom|dad|parents|teacher|grown-?ups?)\b|"
                         r"\bi'?ll always be (here|there) for you\b|\bi'?ll never leave you\b|"
+                        r"\b(here|there) for you forever\b|\b(i'?ll |i will )?always be your (best )?friend\b|"
                         r"\b(best |only )?friends? forever\b|\bforever friends?\b", re.I)
 # Removed: the sentence is dropped and the rest kept.
 AI_TALK = re.compile(r"\bas an ai\b|\blanguage model\b|\bi'?m (just )?an ai\b|\bi cannot browse\b", re.I)
