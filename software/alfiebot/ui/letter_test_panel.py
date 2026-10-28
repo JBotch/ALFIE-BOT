@@ -18,7 +18,7 @@ from alfiebot.ui import widgets as w
 
 log = logging.getLogger(__name__)
 
-SET_ORDER = ("all", "confusing", "B/D/P", "C/G/T", "M/N", "F/S", "A/H/J")
+SET_ORDER = ("all", "confusing", "pairs", "B/D/P", "C/G/T", "M/N", "F/S", "A/H/J")
 TIMEOUT = 8.0
 
 

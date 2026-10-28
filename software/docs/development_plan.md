@@ -77,13 +77,14 @@ The real OpenAI API is only called by an adult with their own key, with syntheti
 - [x] Tests: correct, incorrect, ambiguous letters, recognition failure, help requested, repeated wrong answers, success after hints, teaching, restart persistence, JSON import, switching AI provider mid-activity, the schedule, adaptation undo, clue leak check
 - Not done: optional AI phrasing for encouragement and tips. `teaching.leaks_spelling` (the "no spelling leak" check) is ready for it; everything works without AI. Approved learning preferences have a table but no panel yet.
 
-## Phase 6: Voice integration (v0.13)
+## Phase 6: Voice integration (v0.13, built; laptop measurements to do)
 
-- [ ] Letter-by-letter vs continuous recognition modes; extend the letter test tool to compare them on B/D, M/N, P/T, F/S
-- [ ] Measure on Jordan's PC with adult voices and synthetic Piper audio; report accuracy, clarification rate and time per word
-- [ ] Try whisper.cpp or faster-whisper for letters if Vosk accuracy is poor (no British Vosk model exists); adopt only if it helps
-- [ ] Offline wake word ("Hey AlfieBot") behind the existing interface
-- [ ] Speech and expression timing, spoken AI replies through the voice profiles
+- [x] Letter-by-letter vs continuous spelling (`spelling.recognition_mode`, panel button): one letter per utterance with a tick after each, or a run of letters; the session records which mode was used and each attempt its time
+- [x] `speech/letter_compare.py` + `tools/measure_voice.py`: Piper voices (three speeds, optional hiss) say words built from B/D, M/N, P/T, F/S; Vosk hears them both ways; report of right first time, clarification rate, wrong-but-sure, per-pair accuracy and time per word, saved to `benchmarks/results/` and the `letter_trials` table. "Pairs" set added to the Letter test for adult voices
+- [ ] Run `tools/measure_voice.py` and the Letter test on Jordan's laptop and record the results
+- [ ] whisper.cpp or faster-whisper for letters: only if the Vosk results are poor, and only after Jordan agrees to the download
+- [x] Offline wake word ("Hey AlfieBot") behind the `WakeWordDetector` interface, using the existing Vosk model with a wake grammar (`speech/wake_word.py`); parent setting `privacy.wake_word_enabled`, off by default; anything else heard while asleep is dropped unseen
+- [x] Spoken AI replies through the voice profiles with the AI's expression; the eyes look around while a slow AI answer is on its way
 - **Demo:** "Hey AlfieBot", a spoken chat with the local model, and a spoken spelling test, all with the mic and speakers on the laptop.
 
 ## Phase 7: Full system testing (v1.0)

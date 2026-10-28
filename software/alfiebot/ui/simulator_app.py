@@ -151,15 +151,18 @@ class SimulatorApp:
         self.speaker_btn = add((px + 260, 18, 96, 24), "Speaker: on",
                                lambda: self.robot.set_voice_output(not self.robot.voice_output), size=15)
         add((px + inner - 110, y - 3, 110, 22), "Letter test", self._toggle_letter_test, size=15)
+        self.spell_mode_btn = add((px + inner - 260, y - 3, 144, 22), "Letters: in a run",
+                                  self._toggle_spelling_mode, size=15)
 
         # Parent area.
         y = 594
         self.y_parent = y
-        bw = (inner - 12) // 3
-        self.allow_mic_btn = add((px, y + 46, bw, 28), "Allow mic: no", self._toggle_allow_mic, size=16)
-        self.delete_btn = add((px + bw + 6, y + 46, bw, 28), "Reset all data", self._delete_data, size=16)
-        add((px + 2 * (bw + 6), y + 46, bw, 28), "Full-screen face",
-            self._toggle_face_fullscreen, size=16)
+        bw = (inner - 18) // 4
+        self.allow_mic_btn = add((px, y + 46, bw, 28), "Allow mic: no", self._toggle_allow_mic, size=15)
+        self.wake_btn = add((px + bw + 6, y + 46, bw, 28), "Wake word: off", self._toggle_wake_word, size=15)
+        self.delete_btn = add((px + 2 * (bw + 6), y + 46, bw, 28), "Reset all data", self._delete_data, size=15)
+        add((px + 3 * (bw + 6), y + 46, bw, 28), "Full-screen face",
+            self._toggle_face_fullscreen, size=15)
 
     # ---- actions ---------------------------------------------------------
     def _submit_text(self, text):
@@ -228,6 +231,20 @@ class SimulatorApp:
         allowed = not self.robot.mic_allowed_by_parent
         save_setting(self.config, "privacy", "microphone_enabled", allowed)
         log.info("Parent setting: microphone %s", "allowed" if allowed else "not allowed")
+
+    def _toggle_wake_word(self):
+        on = not self.config["privacy"].get("wake_word_enabled", False)
+        self.robot.set_wake_word(on)
+        save_setting(self.config, "privacy", "wake_word_enabled", on)
+        if on and not self.robot.mic_allowed_by_parent:
+            log.warning("The wake word also needs 'Allow mic'.")
+
+    def _toggle_spelling_mode(self):
+        tutor = self.robot.tutor
+        tutor.recognition_mode = "letter_by_letter" if tutor.recognition_mode == "continuous" else "continuous"
+        save_setting(self.config, "spelling", "recognition_mode", tutor.recognition_mode)
+        log.info("Spoken spelling: %s", "one letter at a time" if tutor.recognition_mode == "letter_by_letter"
+                 else "letters in a run")
 
     def _button_down(self):
         self.robot.platform.button.press()
@@ -377,6 +394,8 @@ class SimulatorApp:
     def _mic_status(self):
         robot = self.robot
         rec = robot.platform.recognizer
+        if rec.listening and robot.recognition_mode == "wake":
+            return w.WARN, "ON - only for \"Hey AlfieBot\""
         if rec.listening:
             return w.BAD, "ON - listening"
         if not robot.mic_allowed_by_parent:
@@ -453,10 +472,9 @@ class SimulatorApp:
             heard = f"Voice: {robot.platform.tts.name}" + ("" if robot.voice_output else " (speaker off)")
         w.draw_text(s, heard, (px + 100, self.y_mic + 57), w.TEXT_DIM, 16, max_width=inner - 100)
         ww = robot.platform.wake_word
-        mode = ("letters A-Z + spelling commands" if robot.recognition_mode == "letters"
-                else "conversation")
-        w.draw_text(s, f"Listening for: {mode}.  Wake word: "
-                    + ("on" if ww.configured else "not yet (Stage 5)"),
+        mode = {"letters": "letters A-Z + spelling commands", "wake": "\"Hey AlfieBot\" only"}.get(
+            robot.recognition_mode, "conversation")
+        w.draw_text(s, f"Listening for: {mode}.  Wake word: {ww.status or 'off'}",
                     (px, self.y_mic + 78), w.TEXT_DIM, 15, max_width=inner)
 
         self._section(self.y_input, "Simulated speech")
@@ -486,6 +504,12 @@ class SimulatorApp:
                     (px, self.y_parent + 24), w.TEXT_DIM, 16, max_width=inner)
         self.allow_mic_btn.label = "Allow mic: yes" if robot.mic_allowed_by_parent else "Allow mic: no"
         self.allow_mic_btn.selected = robot.mic_allowed_by_parent
+        wake_on = bool(self.config["privacy"].get("wake_word_enabled", False))
+        self.wake_btn.label = "Wake word: on" if wake_on else "Wake word: off"
+        self.wake_btn.selected = wake_on
+        one = robot.tutor.recognition_mode == "letter_by_letter"
+        self.spell_mode_btn.label = "Letters: one by one" if one else "Letters: in a run"
+        self.spell_mode_btn.selected = one
         armed = time.monotonic() < self._delete_armed_until
         self.delete_btn.label = "Click again to confirm" if armed else "Reset all data"
         self.ai_btn.selected = self.ai.open

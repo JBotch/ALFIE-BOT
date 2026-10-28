@@ -4,10 +4,10 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.12: adaptive spelling** (V1 Phase 5: spelling progress in a
-local database, a teaching ladder that asks before it tells, spaced review
-of tricky words, and a parent view of every change AlfieBot makes by
-itself). Version 0.11 added the hybrid router; the cloud is off by default.
+**Version 0.13: voice integration** (V1 Phase 6: an offline "Hey
+AlfieBot" wake word, spelling aloud one letter at a time or in a run, and a
+tool that measures both with synthetic voices). Version 0.12 added adaptive
+spelling; the cloud AI is off by default.
 The V1 plan is in [docs/](docs/): the audit of the existing software, the
 architecture and the development plan.
 
@@ -22,10 +22,57 @@ architecture and the development plan.
 > tested with a stand-in service only. The Ollama connection was tested
 > with a stand-in Ollama server only (no real model ran on the test
 > machine). The OpenAI connection was tested with a stand-in OpenAI server
-only; the real OpenAI service has not been called.
+only; the real OpenAI service has not been called. The wake word and
+> `tools/measure_voice.py` were tested with a stand-in recogniser and voice
+> only; they still need to be run with the real speech model and Piper.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested, and the face's frame rate on the Pi
 > hasn't been measured.
+
+## What version 0.13 adds: voice integration
+
+- **"Hey AlfieBot" wake word, offline.** It uses the speech model AlfieBot
+  already has, so nothing new is downloaded. It's **off by default**: a
+  parent switches it on with **Wake word** (next to **Allow mic**). Then,
+  while AlfieBot is asleep or idle, the microphone listens only for "Hey
+  AlfieBot"; the panel shows "ON - only for Hey AlfieBot". Anything else is
+  ignored and never shown or saved, and the wake phrase has to be heard
+  clearly (`speech.wake_min_confidence`). The button still wakes AlfieBot
+  too, and push-to-talk mode never listens while asleep.
+- **Two ways to spell aloud** (**Letters:** button in Spelling homework, or
+  `spelling.recognition_mode`):
+  - *in a run* (as before): say the letters one after another, then
+    "finished";
+  - *one by one*: one letter per go. AlfieBot gives a tiny tick after each
+    letter it got, and if it hears two at once it keeps the first and asks
+    for the next.
+- **Measure it:** `tools/measure_voice.py` makes Piper say test words built
+  from letters that sound alike (B/D, M/N, P/T, F/S) at three speeds, and
+  the speech model hears them both ways. The report compares right first
+  time, how often AlfieBot would have to ask, wrong-but-sure answers, the
+  letter pairs, and the time per word. It also checks the wake word against
+  "Hey AlfieBot" and other sentences. Synthetic voices only, never a
+  recording of a child; results go to `benchmarks/results/` and
+  `data/alfiebot.db`, and audio is never saved.
+- The **Letter test** has a new **Pairs** set (B, D, M, N, P, T, F, S) for
+  testing with real adult voices.
+- **Time per answer** is saved with each spelling attempt, and the CSV
+  export shows it with the spelling mode, so the two modes can be compared
+  in real use too.
+- **AI replies** are spoken in the personality's voice profiles, with the
+  AI's chosen expression while AlfieBot talks. If an answer takes a while,
+  AlfieBot's eyes look around as if thinking.
+
+### Measure spelling aloud on your computer
+
+```powershell
+cd $HOME\AlfieBot\software
+.\.venv\Scripts\python.exe tools\measure_voice.py
+```
+
+It takes a few minutes and needs the speech model and a Piper voice
+(already there if AlfieBot talks and listens). Add `--noise 0 0.02` to also
+try a little background hiss.
 
 ## What version 0.12 adds: adaptive spelling
 
@@ -684,6 +731,21 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Reset all data | Click twice to delete the `data/` folder (spelling lists and progress) and clear the transcript and AI statistics |
 | Face-only mode | 1-9, 0, D, Space, Esc | Expressions, follow state, demo of all 16, button, quit |
 
+## What to test in version 0.13
+
+1. **Allow mic**, then **Wake word: on**. Stop talking to AlfieBot until it
+   goes idle: the microphone line says "ON - only for Hey AlfieBot".
+2. Say something else (it's ignored and not in the transcript), then "Hey
+   AlfieBot": it wakes and says hello. Try it from across the room.
+3. Switch **Wake word** off: the microphone closes while AlfieBot is idle.
+4. In Spelling homework, switch **Letters: one by one**, start a test and
+   spell a word one letter at a time. You hear a tick after each letter.
+   Try saying two letters at once.
+5. Run `tools\measure_voice.py` and look at the report in
+   `benchmarks\results`.
+6. Ask AlfieBot a "why" question with Ollama: the eyes look around while
+   it thinks, then it answers in its own voice.
+
 ## What to test in version 0.12
 
 1. Start the simulator. Open **Spelling homework**: your lists are still
@@ -919,6 +981,7 @@ software/
   tools/render_expressions.py   saves a PNG of every expression and an expression sheet
   tools/check_speech.py    tests the voice and microphone on their own
   tools/letter_test.py     letter recognition test and report
+  tools/measure_voice.py   spelling aloud and wake word, measured with Piper voices
   tools/download_voice.py  downloads a Piper voice (British English)
   requirements-cloud.txt   optional: online comparison voice (edge-tts)
   tests/                   automated tests (pytest)
@@ -939,6 +1002,8 @@ software/
                            cloud_tts.py (optional online comparison voice),
                            vosk_recognizer.py (offline mic), text.py (letters for speech),
                            mic_gate.py keeps the mic deaf while AlfieBot talks,
+                           wake_word.py (offline "Hey AlfieBot" with the speech model),
+                           letter_compare.py (one letter at a time vs a run, synthetic voices),
                            letter_test.py (letter recognition test and report)
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
     ai/                    provider_base.py (provider interface), mock_provider.py (pretend AI),
@@ -979,7 +1044,10 @@ that implements the interface in `speech/base.py`.
   The statistics database stores timings, never words.
 - The microphone is off until a parent allows it (**Allow mic**, saved as
   `privacy.microphone_enabled`), it only opens while AlfieBot is listening,
-  and its status is always shown in the panel.
+  and its status is always shown in the panel. The wake word is a separate
+  parent setting (`privacy.wake_word_enabled`, off): only when it's on does
+  the microphone also stay open while AlfieBot is asleep or idle, listening
+  for "Hey AlfieBot" alone, on this computer; anything else is dropped.
 - Audio is processed in memory and never saved; there is no code that
   records it. Speech recognition and AlfieBot's voice (Piper, Windows or
   espeak-ng) run on the computer, not online. The only downloads are the

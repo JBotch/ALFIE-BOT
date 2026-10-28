@@ -23,6 +23,7 @@ import json
 import logging
 import random
 import re
+import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -39,6 +40,7 @@ from alfiebot.spelling.words import clean_word, parse_spelled_answer, spell_out
 log = logging.getLogger(__name__)
 
 RESPONSES_PATH = Path(__file__).resolve().parent / "responses.json"
+RECOGNITION_MODES = ("continuous", "letter_by_letter")
 TEACH_AFTER = 3  # genuine mistakes before AlfieBot teaches the word
 MAX_CLUES = 2
 
@@ -74,7 +76,9 @@ class SpellingTutor:
         ``LearningProgress`` (SQLite)."""
         self.min_confidence = min_confidence
         self.reveal_after_test_mistake = reveal_after_test_mistake
-        self.recognition_mode = recognition_mode
+        # "continuous" (letters in a run) or "letter_by_letter" (one per utterance).
+        self.recognition_mode = recognition_mode if recognition_mode in RECOGNITION_MODES else "continuous"
+        self.letters_heard = 0  # spoken letters accepted so far (the robot ticks after each)
         self.confirm_spoken = confirm_spoken  # "always" or "when_unsure"
         self.phonetic = phonetic  # "child" (B for ball), "nato" (B for bravo) or "off"
         self.lists = lists
@@ -102,6 +106,7 @@ class SpellingTutor:
         self._missed: List[str] = []
 
     def _reset_word(self) -> None:
+        self._asked_at = time.monotonic()  # for the time per answer
         self._mistakes = 0
         self._hint = 0  # clues given for this word
         self._taught = False
@@ -312,9 +317,18 @@ class SpellingTutor:
         say, so AlfieBot just keeps listening while the letters appear."""
         has_letters = any(isinstance(t, Letter) for t in tokens)
         unknown, note = [], None
+        extra = None
+        if self.recognition_mode == "letter_by_letter":
+            letters = [t for t in tokens if isinstance(t, Letter)]
+            if len(letters) > 1:
+                # One letter per go: keep the first, ask for the rest one at a time.
+                keep = letters[0]
+                tokens = [t for t in tokens if not isinstance(t, Letter) or t is keep]
+                extra = keep
         for t in tokens:
             if isinstance(t, Letter):
                 self.answer.add(t.letter, t.confidence, t.phonetic, t.heard)
+                self.letters_heard += 1
             elif isinstance(t, Unknown):
                 unknown.append(t.word)
                 if has_letters:
@@ -343,6 +357,8 @@ class SpellingTutor:
         if unknown and not has_letters:
             self._record(UNCLEAR)  # a hearing problem, never a mistake
             return self._say("letters_please", mood=Expression.CONFUSED, heard=" ".join(unknown))
+        if extra is not None:
+            return self._say("one_letter_at_a_time", mood=Expression.LISTENING, letter=extra.letter.upper())
         return None
 
     def finish_spoken_answer(self) -> Optional[Reply]:
@@ -520,7 +536,9 @@ class SpellingTutor:
         correct = letters == word
         heard = heard or {"source": "typed"}
         self.progress.record_attempt(word, correct, self.mode, letters, hints=self._hint + int(self._taught),
-                                     session_id=self.session_id, **heard)
+                                     session_id=self.session_id, seconds=round(time.monotonic() - self._asked_at, 1),
+                                     **heard)
+        self._asked_at = time.monotonic()
         if self.mode == "practice":
             return self._practice_answer(word, letters, correct)
         return self._test_answer(word, correct)

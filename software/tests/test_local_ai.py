@@ -304,7 +304,7 @@ def test_database_migrations_are_idempotent(tmp_path):
     db = Database(tmp_path)
     db.migrate()
     db.migrate()
-    assert db.version == 2
+    assert db.version == 3
     columns = {r["name"] for r in db.query("PRAGMA table_info(ai_requests)")}
     assert "latency_s" in columns and not columns & {"text", "speech", "prompt", "content"}
 

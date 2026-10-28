@@ -34,7 +34,7 @@
     "wake_delay": 0.9
   },
   "speech": {
-    "_comment": "tts_engine: auto (Piper if a Piper voice is installed, otherwise the Windows voice on Windows or espeak-ng on the Pi), piper, windows, espeak or none. piper_voice: the Piper voice in models/piper (get one with tools/download_voice.py). voice: part of a Windows voice name (e.g. Hazel or George) or an espeak voice (e.g. en-gb). rate: -10 (slow) to 10 (fast), Windows and espeak only. volume: 0-100. speed: overall speed for every voice and profile (1.0 normal, 0.8 slower, 1.2 faster). personality: bubbly (Bubbly Bot: cheerful, a little higher, sound effects) or classic (the v0.6 voice). voice_profile: auto (the personality picks a profile for each reply) or a profile name to always use it. pitch: semitones up (+) or down (-) for every profile (Piper and espeak-ng; Windows voices only if they support it). speaker_device: blank for the default speaker (Piper only). recognizer: vosk or none. mic_mode: open (listens whenever AlfieBot is listening) or push_to_talk (only while the button is held). mic_device: blank for the default microphone, or part of its name. min_confidence: spoken letters below this are checked with the child. allow_cloud_voices: parent setting, false by default. True lets the Voice panel compare with a Microsoft online voice (pip install edge-tts); only AlfieBot's own words are sent, never anything Alfie says. cloud_voice: e.g. en-GB-MaisieNeural (a child's voice) or en-GB-SoniaNeural.",
+    "_comment": "tts_engine: auto (Piper if a Piper voice is installed, otherwise the Windows voice on Windows or espeak-ng on the Pi), piper, windows, espeak or none. piper_voice: the Piper voice in models/piper (get one with tools/download_voice.py). voice: part of a Windows voice name (e.g. Hazel or George) or an espeak voice (e.g. en-gb). rate: -10 (slow) to 10 (fast), Windows and espeak only. volume: 0-100. speed: overall speed for every voice and profile (1.0 normal, 0.8 slower, 1.2 faster). personality: bubbly (Bubbly Bot: cheerful, a little higher, sound effects) or classic (the v0.6 voice). voice_profile: auto (the personality picks a profile for each reply) or a profile name to always use it. pitch: semitones up (+) or down (-) for every profile (Piper and espeak-ng; Windows voices only if they support it). speaker_device: blank for the default speaker (Piper only). recognizer: vosk or none. mic_mode: open (listens whenever AlfieBot is listening) or push_to_talk (only while the button is held). mic_device: blank for the default microphone, or part of its name. min_confidence: spoken letters below this are checked with the child. wake_min_confidence: how sure the recogniser must be of \"Hey AlfieBot\" to wake (higher = fewer false wakes). allow_cloud_voices: parent setting, false by default. True lets the Voice panel compare with a Microsoft online voice (pip install edge-tts); only AlfieBot's own words are sent, never anything Alfie says. cloud_voice: e.g. en-GB-MaisieNeural (a child's voice) or en-GB-SoniaNeural.",
     "tts_engine": "auto",
     "piper_voice": "en_GB-cori-medium",
     "voice": "",
@@ -50,6 +50,7 @@
     "mic_mode": "open",
     "mic_device": "",
     "min_confidence": 0.75,
+    "wake_min_confidence": 0.7,
     "allow_cloud_voices": false,
     "cloud_voice": "en-GB-MaisieNeural"
   },
@@ -61,10 +62,11 @@
     }
   },
   "spelling": {
-    "_comment": "How spoken spellings are checked. confirm_spoken_answers: always (AlfieBot reads the letters back for a yes before marking) or when_unsure (only when a letter was unclear). phonetic_words: child (B for ball), nato (B for bravo) or off, used when AlfieBot asks about an unclear letter. finish_after_pause: seconds of quiet after some letters before AlfieBot checks them (0 = wait for 'finished').",
+    "_comment": "How spoken spellings are checked. confirm_spoken_answers: always (AlfieBot reads the letters back for a yes before marking) or when_unsure (only when a letter was unclear). phonetic_words: child (B for ball), nato (B for bravo) or off, used when AlfieBot asks about an unclear letter. finish_after_pause: seconds of quiet after some letters before AlfieBot checks them (0 = wait for 'finished'). recognition_mode: continuous (say the letters in a run) or letter_by_letter (one letter at a time; AlfieBot ticks after each).",
     "confirm_spoken_answers": "always",
     "phonetic_words": "child",
-    "finish_after_pause": 5.0
+    "finish_after_pause": 5.0,
+    "recognition_mode": "continuous"
   },
   "learning": {
     "_comment": "Spelling practice and review. review_days: how many days a word waits in each of the 5 review boxes (right first time with no help moves a word up a box; taught, wrong in a test or skipped moves it back to box 1). max_session_words: the most words in one practice. confidence_words: words already learned that are added to a practice for confidence. reveal_after_test_mistake: false = after a wrong test answer AlfieBot doesn't say the spelling, and the word goes into practice instead.",
@@ -113,8 +115,9 @@
     "button_gpio_pin": 17
   },
   "privacy": {
-    "_comment": "Parent settings. The microphone stays off until a parent turns it on. Audio is never saved unless keep_audio_recordings is true.",
+    "_comment": "Parent settings. The microphone stays off until a parent turns it on. wake_word_enabled: when true (and the microphone is allowed), the microphone also stays open while AlfieBot is asleep or idle, listening only for \"Hey AlfieBot\" on this computer; anything else is ignored and nothing is saved. Audio is never saved unless keep_audio_recordings is true.",
     "microphone_enabled": false,
+    "wake_word_enabled": false,
     "keep_audio_recordings": false
   },
   "data_dir": "data",

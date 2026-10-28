@@ -3,7 +3,8 @@
 Version 1 holds AI request statistics: timings, token counts, errors and
 which machine measured them, never what was said. Version 2 adds learning
 records: spelling lists, progress per word, sessions, attempts and the
-adaptations log. Each version is a migration, so an existing database is
+adaptations log. Version 3 adds the time per answer and the letter
+recognition comparison results (from synthetic voices, never a child). Each version is a migration, so an existing database is
 upgraded in place rather than replaced.
 
 A connection is opened per operation: calls come from the AI worker
@@ -105,6 +106,25 @@ MIGRATIONS: List[Sequence[str]] = [
      """CREATE TABLE meta (
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL)"""),
+    # 3: time per answer, and the letter recognition comparison (synthetic voices only).
+    ("ALTER TABLE attempts ADD COLUMN seconds REAL",
+     """CREATE TABLE letter_trials (
+            id INTEGER PRIMARY KEY,
+            run TEXT NOT NULL,
+            at REAL NOT NULL,
+            machine TEXT NOT NULL,
+            recogniser TEXT NOT NULL,
+            mode TEXT NOT NULL,
+            voice TEXT NOT NULL,
+            speed REAL NOT NULL,
+            noise REAL NOT NULL,
+            expected TEXT NOT NULL,
+            heard TEXT NOT NULL,
+            min_confidence REAL,
+            would_ask INTEGER NOT NULL,
+            correct INTEGER NOT NULL,
+            audio_s REAL NOT NULL,
+            process_s REAL NOT NULL)"""),
 ]
 
 

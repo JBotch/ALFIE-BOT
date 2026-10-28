@@ -209,5 +209,9 @@
   ],
   "test_skip_reveal": [
     "No problem. {Word} is spelled {letters}. We'll practise it later."
+  ],
+  "one_letter_at_a_time": [
+    "One letter at a time, please! I've got {letter}. What's next?",
+    "Just one letter each time. I heard {letter}. Next letter?"
   ]
 }

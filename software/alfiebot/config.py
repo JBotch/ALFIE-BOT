@@ -53,11 +53,13 @@ DEFAULTS = {
         "mic_mode": "open",
         "mic_device": None,
         "min_confidence": 0.75,
+        "wake_min_confidence": 0.7,
     },
     "spelling": {
         "confirm_spoken_answers": "always",
         "phonetic_words": "child",
         "finish_after_pause": 5.0,
+        "recognition_mode": "continuous",
     },
     "learning": {
         "review_days": [1, 2, 4, 7, 14],
@@ -94,7 +96,7 @@ DEFAULTS = {
     },
     "router": {"slow_local_s": 6.0, "unhealthy_after_failures": 3, "cooldown_s": 60.0},
     "hardware": {"button_gpio_pin": 17},
-    "privacy": {"microphone_enabled": False, "keep_audio_recordings": False},
+    "privacy": {"microphone_enabled": False, "wake_word_enabled": False, "keep_audio_recordings": False},
     "data_dir": "data",
 }
 

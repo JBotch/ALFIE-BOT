@@ -160,16 +160,17 @@ class LearningProgress:
     # ---- attempts -------------------------------------------------------------
     def record_attempt(self, word: str, correct: bool = None, mode: str = "practice", answer: str = "",
                        outcome: str = None, hints: int = 0, clarifications: int = 0,
-                       min_confidence: float = None, source: str = "typed", session_id: int = None) -> None:
+                       min_confidence: float = None, source: str = "typed", session_id: int = None,
+                       seconds: float = None) -> None:
         outcome = outcome or (CORRECT if correct else INCORRECT)
         if outcome not in OUTCOMES:
             raise ValueError(f"unknown outcome {outcome}")
         marked = outcome in (CORRECT, INCORRECT)
         with self.db.transaction() as conn:
             conn.execute("INSERT INTO attempts (session_id, word, at, mode, outcome, answer, hints_used, "
-                         "clarifications, min_confidence, source) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                         "clarifications, min_confidence, source, seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                          (session_id, word, self.clock(), mode, outcome, answer if marked else "", hints,
-                          clarifications, min_confidence, source))
+                          clarifications, min_confidence, source, seconds))
             self._ensure_word(conn, word)
             conn.execute(
                 "UPDATE word_progress SET attempts = attempts + ?, correct = correct + ?, "
@@ -319,16 +320,18 @@ class LearningProgress:
             out = csv.writer(f)
             out.writerow(["record", "word", "date", "mode", "outcome", "answer", "hints", "clarifications",
                           "lowest_confidence", "box", "next_review", "right", "wrong", "unclear", "taught",
-                          "tricky_sessions"])
+                          "tricky_sessions", "seconds", "spelling_mode"])
             for r in self.db.query("SELECT * FROM word_progress ORDER BY word"):
                 out.writerow(["word", r["word"], r["last_seen"], "", "", "", r["hints"], "", "", r["box"],
                               r["due_on"], r["correct"], r["incorrect"], r["unclear"], r["taught"],
-                              r["difficult_sessions"]])
-            for r in self.db.query("SELECT * FROM attempts ORDER BY at, id"):
+                              r["difficult_sessions"], "", ""])
+            for r in self.db.query("SELECT a.*, s.recognition_mode FROM attempts a LEFT JOIN sessions s "
+                                   "ON s.id = a.session_id ORDER BY a.at, a.id"):
                 out.writerow(["attempt", r["word"], _date(r["at"], True), r["mode"], r["outcome"], r["answer"],
                               r["hints_used"], r["clarifications"],
                               "" if r["min_confidence"] is None else f"{r['min_confidence']:.2f}"]
-                             + [""] * 7)
+                             + [""] * 7 + ["" if r["seconds"] is None else f"{r['seconds']:.1f}",
+                                           r["recognition_mode"] or ""])
         log.info("Exported learning records to %s", path)
         return path
 
