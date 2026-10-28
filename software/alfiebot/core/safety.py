@@ -76,7 +76,8 @@ PERSONAL = [
 ]
 MASKS = {"email": "[email]", "phone": "[phone number]", "postcode": "[postcode]", "address": "[address]",
          "school": "[school]", "name": "[name]", "birthday": "[birthday]"}
-# Words about Alfie's own life that make a request personal even with nothing to mask.
+# Words about Alfie's own life that make a request personal even with nothing to mask
+# (anything else about the speaker counts too: see _about_the_child).
 PERSONAL_HINTS = r"\b(my (mum|mom|dad|family|brother|sister|teacher|friend|school|house|home|nan|grandad)|i live)\b"
 
 # Things an AI reply must never contain.
@@ -120,8 +121,16 @@ def check_input(text: str) -> InputCheck:
         if any(re.search(p, lowered) for p in patterns):
             return InputCheck(mask_personal(text)[0], "sensitive" if topic in WORRYING else "personal", topic)
     masked_text, kinds = mask_personal(text)
-    personal = bool(kinds) or bool(re.search(PERSONAL_HINTS, lowered))
+    personal = bool(kinds) or bool(re.search(PERSONAL_HINTS, lowered)) or _about_the_child(lowered)
     return InputCheck(masked_text, "personal" if personal else "public", masked=kinds)
+
+
+def _about_the_child(lowered: str) -> bool:
+    """Anything about the speaker counts as personal; only general questions
+    ("what is a volcano", "tell me about space") can be "public"."""
+    general = re.sub(r"\b(tell|show|help|teach|give|explain (it |that |this )?to) me\b", " ", lowered)
+    return bool(re.search(r"\b(i|i'?m|i'?ve|i'?d|i'?ll|me|my|mine|myself|we|we'?re|our|ours|us)\b", general)
+                or re.search(r"\d", general))
 
 
 def mask_personal(text: str):

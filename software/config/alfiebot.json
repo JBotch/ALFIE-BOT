@@ -67,13 +67,12 @@
     "finish_after_pause": 5.0
   },
   "ai": {
-    "_comment": "The AI brain. enabled: false uses only the hand-written replies. local_provider: ollama (a real AI model on this computer, see ollama.com) or mock (a pretend AI, for testing). If Ollama isn't running or the model isn't installed, the pretend AI answers instead and the AI brain panel says why. local_model: the Ollama model, e.g. qwen3:1.7b (best answers in the laptop benchmark), qwen3:0.6b (fastest) or gemma3:1b (install with: ollama pull qwen3:1.7b). AlfieBot never downloads models itself. mode: local_only, cloud_only or automatic. cloud_enabled: parent setting, false by default; even when true a child's words never go to the cloud until the privacy checks are finished (only an adult test session can use it). timeout_s: how long AlfieBot waits for an AI answer before giving a hand-written reply. max_tokens: the longest AI answer. mock_delay_s: makes the pretend AI take this long, to see the thinking face.",
+    "_comment": "The AI brain. enabled: false uses only the hand-written replies. local_provider: ollama (a real AI model on this computer, see ollama.com) or mock (a pretend AI, for testing). If Ollama isn't running or the model isn't installed, the pretend AI answers instead and the AI brain panel says why. local_model: the Ollama model, e.g. qwen3:1.7b (best answers in the laptop benchmark), qwen3:0.6b (fastest) or gemma3:1b (install with: ollama pull qwen3:1.7b). AlfieBot never downloads models itself. mode: local_only, cloud_only or automatic. The cloud settings are in the cloud section. timeout_s: how long AlfieBot waits for an AI answer before giving a hand-written reply. max_tokens: the longest AI answer. mock_delay_s: makes the pretend AI take this long, to see the thinking face.",
     "enabled": true,
     "mode": "local_only",
     "local_provider": "ollama",
     "local_model": "qwen3:1.7b",
     "ollama_url": "http://localhost:11434",
-    "cloud_enabled": false,
     "timeout_s": 12.0,
     "max_tokens": 160,
     "mock_delay_s": 0.0
@@ -82,6 +81,26 @@
     "_comment": "What AlfieBot remembers of a conversation, in memory only (never saved). conversation_turns: how many recent lines it keeps for the AI. conversation_idle_minutes: forgets them after this long without talking. It also forgets everything when it goes to sleep.",
     "conversation_turns": 10,
     "conversation_idle_minutes": 5.0
+  },
+  "cloud": {
+    "_comment": "Cloud AI. PARENT SETTINGS. enabled: false by default. child_data_review_complete: only set this to true once an adult has read the cloud provider's terms and child-data rules and is happy for a child's general questions (never personal ones) to be sent; until then only an adult test session (typed text in the developer panel) can use the cloud. provider: mock (a pretend cloud, nothing leaves the computer) or openai. model: the OpenAI model. The API key is never stored here: set it in the environment variable named in api_key_env (e.g. in PowerShell: setx OPENAI_API_KEY \"sk-...\", then reopen PowerShell). timeout_s, max_retries: per request. price_input_per_million / price_output_per_million: US dollars per million tokens, for the cost estimate (check the provider's current prices). daily_budget_usd: no more cloud requests today once the estimated spend reaches this.",
+    "enabled": false,
+    "child_data_review_complete": false,
+    "provider": "mock",
+    "model": "gpt-4o-mini",
+    "url": "https://api.openai.com/v1",
+    "api_key_env": "OPENAI_API_KEY",
+    "timeout_s": 10.0,
+    "max_retries": 2,
+    "price_input_per_million": 0.15,
+    "price_output_per_million": 0.60,
+    "daily_budget_usd": 0.50
+  },
+  "router": {
+    "_comment": "slow_local_s: if the local AI's recent answers take longer than this, it is asked for shorter answers (it never sends anything to the cloud instead). unhealthy_after_failures: after this many failures in a row an AI rests for cooldown_s seconds.",
+    "slow_local_s": 6.0,
+    "unhealthy_after_failures": 3,
+    "cooldown_s": 60.0
   },
   "hardware": {
     "button_gpio_pin": 17

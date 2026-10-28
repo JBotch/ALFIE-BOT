@@ -4,9 +4,10 @@ Python software for AlfieBot, the 3D-printed companion robot. The same code
 runs as a desktop simulator on a normal computer and, later, on the robot's
 Raspberry Pi 5.
 
-**Version 0.10: local AI brain** (V1 Phase 3: a real AI model running
-on this computer through Ollama, with AlfieBot's personality, a short
-conversation memory, first safety checks and a model benchmark).
+**Version 0.11: hybrid router** (V1 Phase 4: chooses between the local
+AI, an optional cloud AI and the pretend AI, with a privacy gate that keeps
+a child's words on this computer, Python answers for maths, time and date,
+and a daily cloud budget). The cloud is off by default.
 The V1 plan is in [docs/](docs/): the audit of the existing software, the
 architecture and the development plan.
 
@@ -20,10 +21,71 @@ architecture and the development plan.
 > with the real Piper voice on Windows). The online comparison voice was
 > tested with a stand-in service only. The Ollama connection was tested
 > with a stand-in Ollama server only (no real model ran on the test
-> machine); no online AI service is used.
+> machine). The OpenAI connection was tested with a stand-in OpenAI server
+only; the real OpenAI service has not been called.
 > **It has not been run on Raspberry Pi hardware yet.** The Pi-specific code
 > (GPIO button) is written but untested, and the face's frame rate on the Pi
 > hasn't been measured.
+
+## What version 0.11 adds: the hybrid router
+
+- **Python answers maths, time and date.** "What is 7 times 8", "twelve
+  take away five", "what's 17 divided by 5" (3 remainder 2), "what time is
+  it", "what day is it". Small AI models get sums wrong; these are exact
+  and never go to any AI.
+- **A privacy gate for the cloud.** The cloud AI (OpenAI) is **off by
+  default**. Even when a parent switches it on, a request only goes to the
+  cloud if the internet is up, an API key is set, today's budget isn't
+  used up, the cloud isn't resting after failures, the request is
+  "public" (nothing about the child: no "I", "my", "me" or numbers, no
+  personal details, nothing sensitive), and either:
+  - an adult typed it in an **adult test session** (spoken words never
+    count, because they could be a child's), or
+  - a parent has marked the **child-data review** as done (two clicks).
+
+  Personal and sensitive requests never go to the cloud in any mode, even
+  in an adult test session. A
+  slow local AI never sends anything to the cloud on its own; AlfieBot
+  asks the local AI for a shorter answer instead.
+- **Modes:** *Local only* (default), *Cloud only* (cloud if the gate allows,
+  otherwise local) and *Automatic* (local for everyday chat, cloud first
+  for "why / how / explain" questions if the gate allows).
+- **If an AI fails**, the other allowed AI is tried, then a hand-written
+  reply. After 3 failures in a row an AI rests for 60 seconds; if the
+  local AI is resting or not running, the pretend AI answers.
+- **Costs:** each cloud answer's tokens and estimated cost are saved (never
+  the words). The daily budget is $0.50 by default; once it's reached the
+  cloud isn't used until midnight. Prices are in `config/alfiebot.json`;
+  check them against the provider's price page.
+- **AI brain panel:** cloud Off/On, Pretend cloud or OpenAI, Adult test
+  session, Child-data review, whether the API key was found, today's spend,
+  and why the cloud is or isn't allowed. Each routing decision shows its
+  reasons.
+- New settings: a `cloud` section (`enabled`, `child_data_review_complete`,
+  `provider`, `model`, `api_key_env`, prices, `daily_budget_usd`, timeouts)
+  and a `router` section (`slow_local_s`, `unhealthy_after_failures`,
+  `cooldown_s`). `ai.cloud_enabled` moved to `cloud.enabled`.
+
+### Using the OpenAI cloud (adults only, optional)
+
+Only do this after reading OpenAI's terms and child-data rules. Use your
+own key and made-up test questions. **Don't mark the child-data review as
+done until those terms and safeguards have been checked.**
+
+1. Create an API key at <https://platform.openai.com/api-keys> and set a
+   low monthly limit there.
+2. Save it for your Windows user (it never goes in a settings file):
+
+   ```powershell
+   setx OPENAI_API_KEY "sk-...your key..."
+   ```
+
+   Close and reopen PowerShell, then start the simulator.
+3. In **AI brain**: Cloud **On**, choose **OpenAI**, mode **Cloud only**,
+   and switch on **Adult test session**. Type a question. The routing
+   decision says whether the cloud answered and why.
+4. To stop using it: Cloud **Off**, and remove the key with
+   `[Environment]::SetEnvironmentVariable("OPENAI_API_KEY", $null, "User")`.
 
 ## Version 0.10.1: fixes from the first real benchmark
 
@@ -571,6 +633,23 @@ The Pi Touch Display 2 starts in portrait. Set it to landscape in
 | Panel | Reset all data | Click twice to delete the `data/` folder (spelling lists and progress) and clear the transcript and AI statistics |
 | Face-only mode | 1-9, 0, D, Space, Esc | Expressions, follow state, demo of all 16, button, quit |
 
+## What to test in version 0.11
+
+1. Type "what is 7 times 8", "twelve take away five", "what's 17 divided
+   by 5", "what time is it" and "what day is it". AlfieBot answers straight
+   away and the routing line says no AI was used.
+2. In **AI brain**, check the cloud is **Off**, and the note says why the
+   cloud isn't allowed.
+3. Switch the cloud **On** with **Pretend cloud**, mode **Cloud only**.
+   Type "why is the sky blue": the cloud still isn't used (no adult test
+   session, review not done). Switch on **Adult test session** and type
+   it again: the pretend cloud answers.
+4. Still in the adult test session, type "my name is Sam and I am 7": it
+   stays local, and the reasons say it's personal.
+5. Click **Internet** to simulate it going down and keep chatting: the
+   local AI answers.
+6. Switch the cloud **Off** again before Alfie uses AlfieBot.
+
 ## What to test in version 0.10
 
 1. Without Ollama: start the simulator, wake AlfieBot and type "I like
@@ -781,6 +860,7 @@ software/
     core/                  robot, brain (who answers), actions (checks AI output),
                            personality (prompt and style checks), memory (short-term),
                            safety (worrying topics, personal details, output rules),
+                           tools (maths, time and date answered by Python),
                            events, state machine, states -> expressions, transcript
     face/                  poses (numbers per expression), engine (blinks, glances, mouth, transitions),
                            renderer (pygame), controller.py (what the AI may ask the face to do)
@@ -794,8 +874,8 @@ software/
                            letter_test.py (letter recognition test and report)
     conversation/          intents.py (phrase matching), responses.json (what AlfieBot says), engine.py
     ai/                    provider_base.py (provider interface), mock_provider.py (pretend AI),
-                           local_provider.py (Ollama),
-                           router.py (which provider answers, and why), connectivity.py,
+                           local_provider.py (Ollama), cloud_provider.py (OpenAI, off by default),
+                           router.py (privacy gate; which provider answers, and why), connectivity.py,
                            performance.py (latency, tokens, errors per provider and machine)
     spelling/              words.py (letters, spoken letter names), letter_input.py (spoken
                            spelling: letters, commands, unsure letters), lists.py (weekly lists),
@@ -814,11 +894,13 @@ that implements the interface in `speech/base.py`.
 
 ## Privacy
 
-- Everything runs offline. There is no internet chatbot. The AI runs on
-  this computer (Ollama) or is the pretend AI inside the program; the cloud
-  AI switch is off by default, and even when it's on, a child's words are
-  never sent (only an adult test session can use it, and the cloud is
-  still a pretend one).
+- Everything runs offline by default. The AI runs on this computer
+  (Ollama) or is the pretend AI inside the program. The cloud AI is off by
+  default. When a parent turns it on, a child's words are still never sent
+  unless the parent has also marked the child-data review as done, and
+  even then only "public" requests (nothing about the child) can go.
+  Spoken words only go when that review is done. The API key comes from
+  an environment variable and is never saved or logged.
 - The AI's conversation memory is kept in memory only and forgotten when
   AlfieBot sleeps. Personal details are masked before the AI sees anything.
   The statistics database stores timings, never words.

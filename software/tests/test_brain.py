@@ -30,7 +30,8 @@ UNKNOWN = "what is the capital of peru"
 
 def make_brain(mode="local_only", cloud_enabled=False, timeout=8.0):
     config = load_config()
-    config["ai"].update(mode=mode, cloud_enabled=cloud_enabled, timeout_s=timeout)
+    config["ai"].update(mode=mode, timeout_s=timeout)
+    config["cloud"]["enabled"] = cloud_enabled
     store = JsonStore(tempfile.mkdtemp(prefix="alfiebot-test-"))
     tutor = SpellingTutor(SpellingLists(store), ProgressTracker(store), rng=random.Random(0))
     local = MockProvider("mock-local", "local", rng=random.Random(0))
@@ -138,7 +139,7 @@ def test_child_words_never_reach_cloud_even_when_enabled():
 def test_adult_test_session_can_use_cloud():
     router = make_router(mode="cloud_only", cloud_enabled=True)
     router.adult_test_session = True
-    assert names(router.choose("hello")) == ["mock-cloud", "mock-local"]
+    assert names(router.choose("hello", "public")) == ["mock-cloud", "mock-local"]
 
 
 def test_personal_data_blocked_even_in_adult_session_without_override():
@@ -149,15 +150,15 @@ def test_personal_data_blocked_even_in_adult_session_without_override():
 def test_automatic_routes_complex_questions_to_cloud_only_when_allowed():
     router = make_router(mode="automatic", cloud_enabled=True)
     router.adult_test_session = True
-    assert names(router.choose("why do cats purr")) == ["mock-cloud", "mock-local"]
-    assert names(router.choose("I like cats")) == ["mock-local", "mock-cloud"]
+    assert names(router.choose("why do cats purr", "public")) == ["mock-cloud", "mock-local"]
+    assert names(router.choose("I like cats", "public")) == ["mock-local", "mock-cloud"]
 
 
 def test_internet_failure_keeps_local():
     router = make_router(mode="cloud_only", cloud_enabled=True)
     router.adult_test_session = True
     router.connectivity.simulate_offline = True
-    decision = router.choose("hello")
+    decision = router.choose("hello", "public")
     assert names(decision) == ["mock-local"]
     assert any("offline" in r for r in decision.reasons)
 

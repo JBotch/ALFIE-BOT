@@ -111,6 +111,19 @@ class PerformanceTracker:
             except (sqlite3.Error, OSError) as exc:
                 log.error("Couldn't clear AI statistics: %s", exc)
 
+    def spend_today(self) -> float:
+        """Estimated cloud cost since midnight (local time)."""
+        midnight = time.mktime(time.localtime()[:3] + (0, 0, 0, 0, 0, -1))
+        with self._lock:
+            return sum(r.cost_estimate for r in self.records if r.at >= midnight)
+
+    def recent_median(self, provider: str, model: str, count: int = 5) -> Optional[float]:
+        """Median time of the last few good answers from one model."""
+        with self._lock:
+            times = [r.latency_s for r in self.records if r.provider == provider and r.model == model and r.ok
+                     and r.source == "chat"][-count:]
+        return statistics.median(times) if times else None
+
     def summaries(self) -> List[Summary]:
         with self._lock:
             records = list(self.records)

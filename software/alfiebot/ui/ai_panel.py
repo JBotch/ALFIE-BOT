@@ -6,13 +6,14 @@ reasons, and performance statistics per provider, model and machine.
 """
 
 import logging
+import time
 
 import pygame
 
 from alfiebot.ai.mock_provider import FAILURES
 from alfiebot.ai.router import MODE_LABELS, MODES
 from alfiebot.config import save_setting
-from alfiebot.core.brain import LOCAL_PROVIDERS
+from alfiebot.core.brain import CLOUD_PROVIDERS, LOCAL_PROVIDERS
 from alfiebot.ui import widgets as w
 
 log = logging.getLogger(__name__)
@@ -29,6 +30,7 @@ class AIPanel:
         self.rect = pygame.Rect(rect)
         self.open = False
         self._hits = []
+        self._review_armed_until = 0.0
 
     @property
     def brain(self):
@@ -64,8 +66,32 @@ class AIPanel:
 
     def _set_cloud(self, on):
         self.router.cloud_enabled = on
-        save_setting(self.config, "ai", "cloud_enabled", on)
+        save_setting(self.config, "cloud", "enabled", on)
         log.info("Parent setting: cloud AI %s", "on" if on else "off")
+
+    def _set_cloud_provider(self, name):
+        if self.brain.use_cloud_provider(name):
+            save_setting(self.config, "cloud", "provider", name)
+
+    def _toggle_review(self):
+        """Parent setting. Marking the review done takes two clicks."""
+        router = self.router
+        if router.review_complete:
+            router.review_complete = False
+            save_setting(self.config, "cloud", "child_data_review_complete", False)
+            log.info("Parent setting: child-data review marked NOT done; a child's words stay on this computer")
+            return
+        now = time.monotonic()
+        if now > self._review_armed_until:
+            self._review_armed_until = now + 4.0
+            log.warning("Only mark the review done if an adult has read the cloud provider's terms and child-data "
+                        "rules. Then a child's general questions (never personal ones) may go to the cloud. "
+                        "Click again within 4 s to confirm.")
+            return
+        self._review_armed_until = 0.0
+        router.review_complete = True
+        save_setting(self.config, "cloud", "child_data_review_complete", True)
+        log.warning("Parent setting: child-data review marked done")
 
     def _set_adult(self, on):
         self.router.adult_test_session = on
@@ -165,14 +191,36 @@ class AIPanel:
         w.draw_text(s, "Cloud AI", (x, y + 4), w.ACCENT, 18)
         nx = self._choices(s, x + label_w, y, [(False, "Off"), (True, "On (parent)")], router.cloud_enabled,
                            self._set_cloud, mouse)
+        names = [(n, label) for n, label in CLOUD_PROVIDERS.items() if n in brain.cloud_providers]
+        nx = self._choices(s, nx + 10, y, names, brain.cloud_provider_name, self._set_cloud_provider, mouse,
+                           width=110)
         self._button(s, (nx + 10, y, 170, 24), f"Adult test session: {'on' if router.adult_test_session else 'off'}",
                      lambda: self._set_adult(not router.adult_test_session), mouse, router.adult_test_session)
         y += 28
-        cloud_note = ("Pretend cloud only; nothing leaves this computer. " if brain.cloud and brain.cloud.simulated
-                      else "")
-        cloud_note += ("A child's words never go to the cloud until privacy checks exist; only an adult "
-                       "test session can use it.")
-        y = _para(s, cloud_note, x + label_w, y, w.TEXT_DIM, 14, right - x - label_w) + 12
+        armed = time.monotonic() < self._review_armed_until
+        review = ("Child-data review: done" if router.review_complete else
+                  "Click again to confirm" if armed else "Child-data review: not done")
+        self._button(s, (x + label_w, y, 200, 24), review, self._toggle_review, mouse,
+                     router.review_complete or armed)
+        cloud = brain.cloud
+        if cloud is None:
+            status, colour = "No cloud AI.", w.TEXT_DIM
+        elif cloud.simulated:
+            status, colour = "Pretend cloud: nothing leaves this computer.", w.TEXT_DIM
+        elif cloud.available():
+            status, colour = f"OpenAI {cloud.model}, API key found.", w.GOOD
+        else:
+            status, colour = cloud.unavailable_reason.capitalize() + ".", w.WARN
+        spent = brain.performance.spend_today()
+        status += f" Today ${spent:.3f} of ${router.daily_budget:.2f}."
+        _para(s, status, x + label_w + 210, y + 1, colour, 14, right - x - label_w - 210)
+        y += 28
+        gate = router.cloud_blocked_reason("public", "voice")
+        note = ("A child's general questions may go to the cloud; personal ones never do." if gate is None else
+                f"A child's words stay on this computer ({gate}). Personal ones never go.")
+        if router.adult_test_session:
+            note += " Adult test session: typed general questions may go to the cloud."
+        y = _para(s, note, x + label_w, y, w.TEXT_DIM, 14, right - x - label_w) + 10
 
         w.draw_text(s, "Simulate problems", (x, y), w.ACCENT, 19)
         y += 24

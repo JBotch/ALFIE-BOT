@@ -49,16 +49,19 @@ Added at Jordan's request before the next AI phase, from the "OLED Face Design &
 - [x] Benchmark run on the laptop: see `docs/benchmark_2026-10-27_laptop.md`. Its findings led to v0.10.1 (guarded topics, stricter output rules, default model qwen3:1.7b)
 - [x] AI panel: Pretend AI / Ollama, model choice, Ollama status, privacy class of the last request; Pi 5 shown as "not measured"
 - [x] Tests: personality checks, memory expiry, safety patterns, provider unavailable, missing model, malformed output, cancelled request, benchmark (all against a stand-in Ollama server)
-- Not done yet: the brief's adaptive learning (Phase 5) and the full privacy gate for the cloud (Phase 4). Requests are classified but the router still treats every child request as "unclassified".
+- Not done yet: the brief's adaptive learning (Phase 5). The full privacy gate for the cloud came in Phase 4.
 - **Demo:** a typed conversation with a local model on the laptop; benchmark report comparing the three models on laptop hardware.
 
-## Phase 4: Hybrid router (v0.11)
+## Phase 4: Hybrid router (v0.11, done)
 
-- [ ] `ai/connectivity.py`, `ai/router.py` with the rule order in the proposal
-- [ ] Privacy gate, parent settings `cloud.enabled` and `cloud.child_data_review_complete` (both off), adult test session switch
-- [ ] `ai/cloud_provider.py` (OpenAI) with environment-variable key, timeouts, limited retries, usage and cost estimates, daily budget
-- [ ] Deterministic tools: maths calculator, time and date
-- [ ] Tests with a fake cloud server: every routing table row in the brief, cloud failure → local, internet loss, slow local never goes to cloud without permission, personal data never goes to cloud in any mode
+- [x] `ai/connectivity.py`, `ai/router.py` with the rule order in the proposal; provider health (3 failures in a row rest a provider for 60 s; the pretend AI stands in for a resting local AI)
+- [x] Privacy gate, parent settings `cloud.enabled` and `cloud.child_data_review_complete` (both off), adult test session switch (typed text only); requests about the child (first person or numbers) are "personal" and never go to the cloud
+- [x] `ai/cloud_provider.py` (OpenAI Chat Completions, strict JSON schema) with environment-variable key, timeouts, limited retries with backoff, usage and cost estimates, daily budget from the statistics database
+- [x] Deterministic tools: maths calculator (digits or words, remainders), time and date (`core/tools.py`)
+- [x] A slow local AI asks for shorter answers; it never sends to the cloud without permission
+- [x] AI panel: cloud on/off, provider, adult test session, child-data review (two clicks), key found or missing, spend today, gate reason
+- [x] Tests with a fake cloud server: every routing table row in the brief, cloud failure → local, internet loss, slow local never goes to cloud without permission, personal data never goes to cloud in any mode, key never logged, budget, retries, refusal, cancel
+- Not done: a call to the real OpenAI API. That needs Jordan's agreement, an adult's own key and made-up prompts.
 - **Demo:** switch modes in the panel and watch decisions and reasons; pull the (simulated) internet and keep chatting locally.
 
 The real OpenAI API is only called by an adult with their own key, with synthetic prompts, and only after Jordan agrees.
